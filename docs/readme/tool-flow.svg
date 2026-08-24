@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="600" viewBox="0 0 900 600">
+<rect width="900" height="600" rx="30" fill="#0f172a"/>
+<g font-family="Inter,ui-sans-serif,system-ui">
+ <text x="60" y="70" font-size="28" font-weight="800" fill="#fff">One tool call, end to end</text>
+ <text x="60" y="103" font-size="16" fill="#94a3b8">The extension handles the browser-side orchestration.</text>
+ <g transform="translate(60,145)">
+  <rect width="780" height="82" rx="18" fill="#1e293b"/><circle cx="42" cy="41" r="20" fill="#eef2ff"/><text x="42" y="47" text-anchor="middle" font-size="17" font-weight="800" fill="#4338ca">1</text><text x="82" y="34" font-size="16" font-weight="800" fill="#fff">Model emits a structured function call</text><text x="82" y="58" font-size="14" fill="#94a3b8">Superpower observes supported chat output and parses the call.</text>
+  <path d="M42 82 V108" stroke="#475569" stroke-width="3"/>
+  <rect y="108" width="780" height="82" rx="18" fill="#1e293b"/><circle cx="42" cy="149" r="20" fill="#eef2ff"/><text x="42" y="155" text-anchor="middle" font-size="17" font-weight="800" fill="#4338ca">2</text><text x="82" y="142" font-size="16" font-weight="800" fill="#fff">Call is routed to the local MCP connection</text><text x="82" y="166" font-size="14" fill="#94a3b8">SSE, WebSocket, and streamable HTTP transports are supported.</text>
+  <path d="M42 190 V216" stroke="#475569" stroke-width="3"/>
+  <rect y="216" width="780" height="82" rx="18" fill="#1e293b"/><circle cx="42" cy="257" r="20" fill="#eef2ff"/><text x="42" y="263" text-anchor="middle" font-size="17" font-weight="800" fill="#4338ca">3</text><text x="82" y="250" font-size="16" font-weight="800" fill="#fff">The MCP server executes the requested tool</text><text x="82" y="274" font-size="14" fill="#94a3b8">Tool output returns as structured result data.</text>
+  <path d="M42 298 V324" stroke="#475569" stroke-width="3"/>
+  <rect y="324" width="780" height="82" rx="18" fill="#312e81"/><circle cx="42" cy="365" r="20" fill="#fff"/><text x="42" y="371" text-anchor="middle" font-size="17" font-weight="800" fill="#4338ca">4</text><text x="82" y="358" font-size="16" font-weight="800" fill="#fff">Result is rendered back into the conversation</text><text x="82" y="382" font-size="14" fill="#c7d2fe">The assistant can continue using the returned context.</text>
+ </g>
+</g>
+</svg>
