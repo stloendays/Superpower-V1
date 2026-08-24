@@ -6,6 +6,7 @@ on:
     paths:
       - '.bootstrap/**'
       - '.github/workflows/bootstrap-import.yml'
+  workflow_dispatch:
 
 permissions:
   contents: write
