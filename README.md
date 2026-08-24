@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="chrome-extension/public/icon-128.png" alt="Superpower" width="96" height="96" />
+  <img src="chrome-extension/public/icon-128.png" alt="Superpower" width="112" height="112" />
 
   <h1>Superpower</h1>
 
@@ -23,6 +23,10 @@
     <a href="#development">Development</a>
   </p>
 </div>
+
+<p align="center">
+  <img src="docs/readme/superpower-wordmark.png" alt="Superpower wordmark" width="900" />
+</p>
 
 <p align="center">
   <img src="docs/readme/hero.svg" alt="Superpower overview" width="100%" />
@@ -67,7 +71,7 @@ The browser UI stays where you already work. MCP execution stays behind the loca
 <tr>
 <td width="50%" align="center" valign="top">
   <img src="docs/readme/sidebar-overview.svg" alt="Illustrated Superpower sidebar overview" width="100%" />
-  <br /><sub>Illustrated sidebar overview based on the current V1 controls.</sub>
+  <br /><sub>Illustrated sidebar overview based on the current controls.</sub>
 </td>
 <td width="50%" align="center" valign="top">
   <img src="docs/readme/tool-flow.svg" alt="Superpower MCP tool execution flow" width="100%" />
@@ -205,9 +209,9 @@ The default V1 connection is SSE at `http://localhost:3006/sse`.
 
 ## V1 highlights
 
-Superpower V1 focuses on a streamlined browser-side MCP workflow:
+Superpower focuses on a streamlined browser-side MCP workflow:
 
-- Superpower branding and a new minimalist extension icon
+- Superpower branding and the custom lightning-S extension icon
 - Chrome extension version `1.0.0` with display version `V1`
 - Dependency-aware MCP instruction guidance for multi-tool workflows
 - Separate function-call blocks in generated instructions
