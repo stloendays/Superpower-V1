@@ -164,7 +164,7 @@ npx -y @srbhptl39/mcp-superassistant-proxy@latest --config ./config.json --outpu
 npx -y @srbhptl39/mcp-superassistant-proxy@latest --config ./config.json --outputTransport ws
 ```
 
-> The proxy package currently retains the upstream `mcp-superassistant-proxy` package name. Superpower V1 uses it as an external compatibility dependency.
+> The proxy package currently uses the `mcp-superassistant-proxy` package name. Superpower uses it as an external compatibility dependency.
 
 ### 4. Build the extension
 
@@ -205,14 +205,14 @@ The default V1 connection is SSE at `http://localhost:3006/sse`.
 
 ## V1 highlights
 
-Superpower V1 focuses on the project transition and the browser-side MCP workflow:
+Superpower V1 focuses on a streamlined browser-side MCP workflow:
 
 - Superpower branding and a new minimalist extension icon
 - Chrome extension version `1.0.0` with display version `V1`
 - Dependency-aware MCP instruction guidance for multi-tool workflows
 - Separate function-call blocks in generated instructions
 - ChatGPT MCP-file submission refresh handling
-- Release-oriented environment templates, security notes, attribution, and repository cleanup
+- Release-oriented environment templates, security notes, and repository cleanup
 
 See [CHANGELOG.md](CHANGELOG.md) for the release summary.
 
@@ -240,7 +240,7 @@ pnpm prettier
 
 ### Firefox build
 
-The monorepo still includes the upstream Firefox build path:
+The monorepo includes a Firefox build path:
 
 ```bash
 pnpm build:firefox
@@ -259,7 +259,6 @@ Superpower-V1/
 ├── docs/readme/               # README visual assets
 ├── CHANGELOG.md
 ├── SECURITY.md
-├── NOTICE.md
 └── README.md
 ```
 
@@ -278,14 +277,18 @@ See [SECURITY.md](SECURITY.md) for project-specific guidance.
 
 ## Contributing
 
-Issues and pull requests are welcome. For adapter bugs, include the affected AI platform, browser version, reproduction steps, and the relevant page behavior. Keep unrelated refactors separate from compatibility fixes so DOM-adapter changes are easier to review.
+Issues and pull requests are welcome.
 
-## Upstream and attribution
+When reporting bugs, please include the affected AI platform, browser version, reproduction steps, and the relevant page behavior. For compatibility-related changes, please keep unrelated refactors separate so that fixes can be reviewed and maintained more effectively.
 
-Superpower V1 is a modified derivative of [MCP SuperAssistant](https://github.com/srbhptl39/MCP-SuperAssistant), originally developed by Saurabh Patel.
+## Author
 
-The upstream project is MIT licensed. The original copyright notice is preserved in [LICENSE](LICENSE), and additional attribution is recorded in [NOTICE.md](NOTICE.md).
+**Superpower** is created and maintained by **Junbo**, from the **National University of Singapore (NUS)**.
+
+The project is independently developed with the goal of building a more powerful, flexible, and seamless interface for connecting AI platforms with external tools and workflows.
 
 ## License
 
 Released under the [MIT License](LICENSE).
+
+Copyright © 2026 Junbo.
