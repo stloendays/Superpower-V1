@@ -1,0 +1,53 @@
+name: Bootstrap Superpower V1
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.bootstrap/**'
+      - '.github/workflows/bootstrap-import.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout bootstrap repository
+        uses: actions/checkout@v4
+
+      - name: Reconstruct source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone https://github.com/srbhptl39/MCP-SuperAssistant.git /tmp/superpower-source
+          git -C /tmp/superpower-source checkout --detach c26168ee2c5708a3a65ef5afd88cda1a97c81734
+          cat .bootstrap/part-* > /tmp/overlay.b85
+          python - <<'PY'
+          import base64
+          data = open('/tmp/overlay.b85', 'rb').read()
+          open('/tmp/overlay.tar.xz', 'wb').write(base64.b85decode(data))
+          PY
+          rm -f \
+            /tmp/superpower-source/.github/FUNDING.yml \
+            /tmp/superpower-source/.husky/pre-committ \
+            /tmp/superpower-source/chrome-extension/public/Cover1.jpg \
+            /tmp/superpower-source/chrome-extension/public/Cover2.png \
+            /tmp/superpower-source/chrome-extension/public/Cover3.jpg \
+            /tmp/superpower-source/chrome-extension/public/Cover4.jpg \
+            /tmp/superpower-source/chrome-extension/public/Cover5.jpg
+          tar -xJf /tmp/overlay.tar.xz -C /tmp/superpower-source
+          rm -rf /tmp/superpower-source/.git
+          cd "$GITHUB_WORKSPACE"
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -a /tmp/superpower-source/. .
+
+      - name: Commit imported source
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Import Superpower V1 source"
+          git push origin HEAD:main
