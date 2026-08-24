@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="600" viewBox="0 0 900 600">
+<rect width="900" height="600" rx="30" fill="#f1f5f9"/>
+<g transform="translate(90,55)" font-family="Inter,ui-sans-serif,system-ui">
+ <rect width="720" height="490" rx="26" fill="#fff" stroke="#dbe3ef"/>
+ <rect width="720" height="68" rx="26" fill="#111827"/><rect y="40" width="720" height="28" fill="#111827"/>
+ <text x="28" y="42" font-size="18" font-weight="800" fill="#fff">Superpower</text><text x="642" y="42" font-size="14" fill="#cbd5e1">V1</text>
+ <g transform="translate(28,96)">
+  <text x="0" y="0" font-size="13" font-weight="800" fill="#64748b">SERVER STATUS</text>
+  <rect y="18" width="664" height="70" rx="16" fill="#f8fafc" stroke="#e2e8f0"/>
+  <circle cx="28" cy="53" r="7" fill="#22c55e"/><text x="47" y="58" font-size="16" font-weight="700" fill="#0f172a">Connected</text><text x="530" y="58" font-size="14" fill="#64748b">localhost</text>
+  <text x="0" y="126" font-size="13" font-weight="800" fill="#64748b">AVAILABLE TOOLS</text>
+  <rect y="144" width="316" height="64" rx="14" fill="#eef2ff" stroke="#c7d2fe"/><text x="18" y="172" font-size="15" font-weight="700" fill="#312e81">search_files</text><text x="18" y="194" font-size="12" fill="#6366f1">filesystem</text>
+  <rect x="332" y="144" width="332" height="64" rx="14" fill="#f8fafc" stroke="#e2e8f0"/><text x="350" y="172" font-size="15" font-weight="700" fill="#0f172a">create_issue</text><text x="350" y="194" font-size="12" fill="#64748b">github</text>
+  <rect y="220" width="316" height="64" rx="14" fill="#f8fafc" stroke="#e2e8f0"/><text x="18" y="248" font-size="15" font-weight="700" fill="#0f172a">query_database</text><text x="18" y="270" font-size="12" fill="#64748b">analytics</text>
+  <rect x="332" y="220" width="332" height="64" rx="14" fill="#f8fafc" stroke="#e2e8f0"/><text x="350" y="248" font-size="15" font-weight="700" fill="#0f172a">fetch_document</text><text x="350" y="270" font-size="12" fill="#64748b">workspace</text>
+  <text x="0" y="322" font-size="13" font-weight="800" fill="#64748b">INSTRUCTIONS</text>
+  <rect y="340" width="664" height="74" rx="14" fill="#111827"/><text x="18" y="370" font-size="14" font-weight="700" fill="#fff">Tool-call instructions ready</text><text x="18" y="394" font-size="12" fill="#cbd5e1">Dependency-aware batching · separate function-call blocks</text>
+ </g>
+</g>
+</svg>
