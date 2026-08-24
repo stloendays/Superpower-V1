@@ -6,6 +6,8 @@ on:
     paths:
       - '.bootstrap/**'
       - '.github/workflows/bootstrap-import.yml'
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -15,8 +17,10 @@ jobs:
   import:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout bootstrap repository
+      - name: Checkout main bootstrap repository
         uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Reconstruct source
         shell: bash
@@ -44,7 +48,7 @@ jobs:
           find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
           cp -a /tmp/superpower-source/. .
 
-      - name: Commit imported source
+      - name: Commit imported source to main
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
