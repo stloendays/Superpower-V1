@@ -1,0 +1,42 @@
+{
+    "name":  "chrome-extension",
+    "version":  "1.0.0",
+    "description":  "Superpower Chrome extension core",
+    "type":  "module",
+    "private":  true,
+    "sideEffects":  false,
+    "scripts":  {
+                    "clean:node_modules":  "pnpm dlx rimraf node_modules",
+                    "clean:turbo":  "rimraf .turbo",
+                    "clean":  "pnpm clean:turbo \u0026\u0026 pnpm clean:node_modules",
+                    "ready":  "tsc -b pre-build.tsconfig.json",
+                    "build":  "vite build",
+                    "dev":  "vite build --mode development",
+                    "test":  "vitest run",
+                    "lint":  "eslint .",
+                    "lint:fix":  "pnpm lint --fix",
+                    "prettier":  "prettier . --write --ignore-path ../.prettierignore",
+                    "type-check":  "tsc --noEmit"
+                },
+    "dependencies":  {
+                         "@extension/env":  "workspace:*",
+                         "@extension/shared":  "workspace:*",
+                         "@extension/storage":  "workspace:*",
+                         "@modelcontextprotocol/sdk":  "^1.20.2",
+                         "zod":  "^4.3.5",
+                         "vite-plugin-node-polyfills":  "^0.23.0",
+                         "webextension-polyfill":  "^0.12.0",
+                         "zustand":  "^5.0.5"
+                     },
+    "devDependencies":  {
+                            "@extension/dev-utils":  "workspace:*",
+                            "@extension/hmr":  "workspace:*",
+                            "@extension/tsconfig":  "workspace:*",
+                            "@extension/vite-config":  "workspace:*",
+                            "@laynezh/vite-plugin-lib-assets":  "^2.1.0",
+                            "@types/chrome":  "0.0.304",
+                            "@types/node":  "^22.5.5",
+                            "magic-string":  "^0.30.10",
+                            "ts-loader":  "^9.5.1"
+                        }
+}
