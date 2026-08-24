@@ -43,6 +43,7 @@ jobs:
             /tmp/superpower-source/chrome-extension/public/Cover4.jpg \
             /tmp/superpower-source/chrome-extension/public/Cover5.jpg
           tar -xJf /tmp/overlay.tar.xz -C /tmp/superpower-source
+          rm -rf /tmp/superpower-source/.github/workflows
           rm -rf /tmp/superpower-source/.git
           cd "$GITHUB_WORKSPACE"
           find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
