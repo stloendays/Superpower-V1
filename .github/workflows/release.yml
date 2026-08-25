@@ -2,14 +2,21 @@ name: Release Superpower
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   release:
+    if: >-
+      github.ref_type == 'tag' ||
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.event.head_commit.message, 'release: publish')
     runs-on: ubuntu-latest
 
     steps:
@@ -25,38 +32,69 @@ jobs:
           node-version-file: '.nvmrc'
           cache: pnpm
 
+      - name: Resolve release version
+        id: version
+        shell: bash
+        run: |
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            if [[ "${VERSION}" != "${PACKAGE_VERSION}" ]]; then
+              echo "Tag version ${VERSION} does not match package.json version ${PACKAGE_VERSION}."
+              exit 1
+            fi
+          else
+            VERSION="${PACKAGE_VERSION}"
+          fi
+
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Publishing Superpower v${VERSION}"
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --prefer-offline
 
       - name: Build extension
         run: pnpm build
 
-      - name: Prepare release package
+      - name: Verify built extension version
+        shell: bash
         run: |
-          VERSION=${GITHUB_REF_NAME#v}
-          mkdir -p release/Superpower-${VERSION}
-          cp -r dist release/Superpower-${VERSION}/dist
-          cp Install-Superpower.cmd release/Superpower-${VERSION}/
-          cp DIY-Install-Superpower.ps1 release/Superpower-${VERSION}/
-          cat > release/Superpower-${VERSION}/README_INSTALL.md <<'EOF'
-          # Superpower Installation
+          VERSION='${{ steps.version.outputs.version }}'
+          BUILT_VERSION=$(node -p "require('./dist/manifest.json').version")
+          if [[ "${BUILT_VERSION}" != "${VERSION}" ]]; then
+            echo "Built manifest version ${BUILT_VERSION} does not match release version ${VERSION}."
+            exit 1
+          fi
 
-          1. Extract this package.
-          2. Double click `Install-Superpower.cmd`.
-          3. Open Chrome extensions if requested.
-          4. Select `dist` using Load unpacked.
+      - name: Prepare release package
+        shell: bash
+        run: |
+          VERSION='${{ steps.version.outputs.version }}'
+          PACKAGE_DIR="release/Superpower-${VERSION}"
 
-          Superpower requires a local MCP proxy endpoint.
-          Default endpoint: http://localhost:3006/sse
-          EOF
+          mkdir -p "${PACKAGE_DIR}"
+          cp -r dist "${PACKAGE_DIR}/dist"
+          cp Install-Superpower.cmd "${PACKAGE_DIR}/"
+          cp DIY-Install-Superpower.ps1 "${PACKAGE_DIR}/"
+          cp RELEASE_INSTALL.md "${PACKAGE_DIR}/README_INSTALL.md"
+          cp LICENSE "${PACKAGE_DIR}/LICENSE"
+
           cd release
-          zip -r Superpower-${VERSION}-Windows.zip Superpower-${VERSION}
-          sha256sum Superpower-${VERSION}-Windows.zip > SHA256SUMS
+          zip -r "Superpower-${VERSION}-Windows.zip" "Superpower-${VERSION}"
+          sha256sum "Superpower-${VERSION}-Windows.zip" > SHA256SUMS
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: Superpower v${{ steps.version.outputs.version }}
           generate_release_notes: true
+          make_latest: true
           files: |
-            release/*.zip
+            release/Superpower-${{ steps.version.outputs.version }}-Windows.zip
             release/SHA256SUMS
+            Install-Superpower.cmd
+            DIY-Install-Superpower.ps1
