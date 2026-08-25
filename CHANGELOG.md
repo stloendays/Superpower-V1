@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.0 - 2026-08-25
+
+- Added a Windows DIY installer bootstrap for easier first-time setup.
+- Added a double-click launcher for Windows users.
+- Added automatic environment checks for Node.js and pnpm during source installation.
+- Added release-oriented installation flow preparation.
+- Improved the transition from developer setup to user-facing installation.
+
 ## 1.0.0 - 2026-08-24
 
 - Rebranded the extension as Superpower.
