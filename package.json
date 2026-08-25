@@ -1,29 +1,29 @@
 {
     "name":  "superpower",
-    "version":  "1.0.0",
+    "version":  "1.1.0",
     "description":  "Superpower - MCP tools for web AI assistants",
     "license":  "MIT",
     "private":  true,
     "sideEffects":  false,
     "type":  "module",
     "scripts":  {
-                    "clean:bundle":  "rimraf dist \u0026\u0026 turbo clean:bundle",
-                    "clean:node_modules":  "pnpm dlx rimraf node_modules \u0026\u0026 pnpm dlx turbo clean:node_modules",
-                    "clean:turbo":  "rimraf .turbo \u0026\u0026 turbo clean:turbo",
-                    "clean":  "pnpm clean:bundle \u0026\u0026 pnpm clean:turbo \u0026\u0026 pnpm clean:node_modules",
-                    "clean:install":  "pnpm clean:node_modules \u0026\u0026 pnpm install --frozen-lockfile",
+                    "clean:bundle":  "rimraf dist && turbo clean:bundle",
+                    "clean:node_modules":  "pnpm dlx rimraf node_modules && pnpm dlx turbo clean:node_modules",
+                    "clean:turbo":  "rimraf .turbo && turbo clean:turbo",
+                    "clean":  "pnpm clean:bundle && pnpm clean:turbo && pnpm clean:node_modules",
+                    "clean:install":  "pnpm clean:node_modules && pnpm install --frozen-lockfile",
                     "type-check":  "turbo type-check",
-                    "base-build":  "pnpm clean:bundle \u0026\u0026 turbo build",
-                    "build":  "pnpm set-global-env \u0026\u0026 pnpm base-build",
-                    "build:firefox":  "pnpm set-global-env CLI_CEB_FIREFOX=true \u0026\u0026 pnpm base-build",
-                    "base-dev":  "pnpm clean:bundle \u0026\u0026 turbo ready \u0026\u0026 turbo watch dev --concurrency 20",
-                    "dev":  "pnpm set-global-env CLI_CEB_DEV=true \u0026\u0026 pnpm base-dev",
-                    "dev:firefox":  "pnpm set-global-env CLI_CEB_DEV=true CLI_CEB_FIREFOX=true \u0026\u0026 pnpm base-dev",
+                    "base-build":  "pnpm clean:bundle && turbo build",
+                    "build":  "pnpm set-global-env && pnpm base-build",
+                    "build:firefox":  "pnpm set-global-env CLI_CEB_FIREFOX=true && pnpm base-build",
+                    "base-dev":  "pnpm clean:bundle && turbo ready && turbo watch dev --concurrency 20",
+                    "dev":  "pnpm set-global-env CLI_CEB_DEV=true && pnpm base-dev",
+                    "dev:firefox":  "pnpm set-global-env CLI_CEB_DEV=true CLI_CEB_FIREFOX=true && pnpm base-dev",
                     "build:eslint":  "tsc -b",
-                    "zip":  "pnpm build \u0026\u0026 pnpm -F zipper zip",
-                    "zip:firefox":  "pnpm build:firefox \u0026\u0026 pnpm -F zipper zip",
-                    "e2e":  "pnpm zip \u0026\u0026 turbo e2e",
-                    "e2e:firefox":  "pnpm zip:firefox \u0026\u0026 turbo e2e",
+                    "zip":  "pnpm build && pnpm -F zipper zip",
+                    "zip:firefox":  "pnpm build:firefox && pnpm -F zipper zip",
+                    "e2e":  "pnpm zip && turbo e2e",
+                    "e2e:firefox":  "pnpm zip:firefox && turbo e2e",
                     "lint":  "turbo lint --continue -- --fix --cache --cache-location node_modules/.cache/.eslintcache",
                     "lint:fix":  "turbo lint:fix --continue -- --fix --cache --cache-location node_modules/.cache/.eslintcache",
                     "prettier":  "turbo prettier --continue -- --cache --cache-location node_modules/.cache/.prettiercache",
@@ -31,7 +31,7 @@
                     "update-version":  "bash bash-scripts/update_version.sh",
                     "copy_env":  "node scripts/copy-env.mjs",
                     "set-global-env":  "bash bash-scripts/set_global_env.sh",
-                    "postinstall":  "pnpm build:eslint \u0026\u0026 pnpm copy_env",
+                    "postinstall":  "pnpm build:eslint && pnpm copy_env",
                     "module-manager":  "pnpm -F module-manager start"
                 },
     "dependencies":  {
@@ -88,6 +88,6 @@
                     },
     "packageManager":  "pnpm@9.15.1",
     "engines":  {
-                    "node":  "\u003e=22.12.0"
+                    "node":  ">=22.12.0"
                 }
 }
