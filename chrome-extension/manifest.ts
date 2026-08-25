@@ -27,7 +27,7 @@ const manifest = {
     },
   },
   version: packageJson.version,
-  version_name: 'V1',
+  version_name: `V${packageJson.version}`,
   description: 'Run MCP tools from supported AI web apps.',
   host_permissions: [
     '*://*.perplexity.ai/*',
