@@ -1,0 +1,62 @@
+name: Release Superpower
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      - name: Build extension
+        run: pnpm build
+
+      - name: Prepare release package
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          mkdir -p release/Superpower-${VERSION}
+          cp -r dist release/Superpower-${VERSION}/dist
+          cp Install-Superpower.cmd release/Superpower-${VERSION}/
+          cp DIY-Install-Superpower.ps1 release/Superpower-${VERSION}/
+          cat > release/Superpower-${VERSION}/README_INSTALL.md <<'EOF'
+          # Superpower Installation
+
+          1. Extract this package.
+          2. Double click `Install-Superpower.cmd`.
+          3. Open Chrome extensions if requested.
+          4. Select `dist` using Load unpacked.
+
+          Superpower requires a local MCP proxy endpoint.
+          Default endpoint: http://localhost:3006/sse
+          EOF
+          cd release
+          zip -r Superpower-${VERSION}-Windows.zip Superpower-${VERSION}
+          sha256sum Superpower-${VERSION}-Windows.zip > SHA256SUMS
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            release/*.zip
+            release/SHA256SUMS
