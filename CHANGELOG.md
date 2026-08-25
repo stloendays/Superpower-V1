@@ -7,6 +7,7 @@
 - Added automatic environment checks for Node.js and pnpm during source installation.
 - Added release-oriented installation flow preparation.
 - Improved the transition from developer setup to user-facing installation.
+- Added automated GitHub Release packaging with a Windows ZIP, checksum, installer entry points, and generated release notes.
 
 ## 1.0.0 - 2026-08-24
 
