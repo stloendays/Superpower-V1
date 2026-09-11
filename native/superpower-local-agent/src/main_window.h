@@ -2,6 +2,7 @@
 
 #include <QJsonObject>
 #include <QMainWindow>
+#include <QScrollBar>
 
 class AgentCore;
 class QLabel;
