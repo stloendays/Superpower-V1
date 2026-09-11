@@ -38,7 +38,15 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Restore Qt cache
+        id: qt-cache
+        uses: actions/cache@v4
+        with:
+          path: C:\Qt\6.8.3\msvc2022_64
+          key: qt-windows-6.8.3-msvc2022-x64-v1
+
       - name: Install Qt 6.8.3
+        if: steps.qt-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           python -m pip install --disable-pip-version-check aqtinstall
