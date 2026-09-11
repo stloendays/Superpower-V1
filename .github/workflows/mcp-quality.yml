@@ -78,6 +78,7 @@ jobs:
           packages/shared/lib/mcp-core/execution-policy.ts
           packages/shared/lib/mcp-core/mcp-telemetry.ts
           packages/shared/lib/mcp-core/gateway.ts
+          packages/shared/lib/mcp-core/sdk-client-adapter.ts
           packages/shared/lib/mcp-core/index.ts
           packages/shared/index.mts
           pages/content/src/core/context-budget.ts
