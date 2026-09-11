@@ -138,7 +138,13 @@ const InstructionManager: React.FC<InstructionManagerProps> = ({ tools }) => {
     logMessage(
       `[InstructionManager] Injected ${generation.stats.selectedTools}/${enabledTools.length} enabled tools (~${generation.stats.estimatedTokens} tokens)`,
     );
-  }, [generatedInstructions, generation.stats.selectedTools, generation.stats.estimatedTokens, enabledTools.length, isEditing]);
+  }, [
+    generatedInstructions,
+    generation.stats.selectedTools,
+    generation.stats.estimatedTokens,
+    enabledTools.length,
+    isEditing,
+  ]);
 
   useEffect(
     () =>
@@ -254,7 +260,8 @@ const InstructionManager: React.FC<InstructionManagerProps> = ({ tools }) => {
               Instructions
             </Typography>
             <div className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-              {generation.stats.selectedTools}/{enabledTools.length} tools injected · ~{generation.stats.estimatedTokens.toLocaleString()} tokens · {budgetPercent}% budget
+              {generation.stats.selectedTools}/{enabledTools.length} tools injected · ~
+              {generation.stats.estimatedTokens.toLocaleString()} tokens · {budgetPercent}% budget
             </div>
           </div>
           <div className="flex items-center gap-1.5">
