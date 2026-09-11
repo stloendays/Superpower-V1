@@ -298,7 +298,8 @@ class McpClient {
     }
 
     const activePlugin = pluginRegistry.getActivePlugin();
-    const adapterName = activePlugin?.name || (typeof window !== 'undefined' ? window.location.hostname : '') || 'unknown';
+    const adapterName =
+      activePlugin?.name || (typeof window !== 'undefined' ? window.location.hostname : '') || 'unknown';
     const timeout = this.resolveRequestTimeout('tool');
 
     // Never log argument values here. They can contain credentials, private content,
@@ -469,7 +470,9 @@ class McpClient {
       if (success) useConnectionStore.getState().setServerConfig(config);
       return success;
     } catch (error) {
-      logMessage(`[McpClient] Failed to update server config: ${error instanceof Error ? error.message : String(error)}`);
+      logMessage(
+        `[McpClient] Failed to update server config: ${error instanceof Error ? error.message : String(error)}`,
+      );
       throw error;
     }
   }
