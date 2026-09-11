@@ -57,12 +57,7 @@ class McpTelemetry {
   private records: McpTelemetryRecord[] = [];
   private readonly maxRecords = 300;
 
-  begin(
-    toolName: string,
-    adapterName: string,
-    risk: ToolRisk,
-    args: Record<string, unknown>,
-  ): McpTelemetryPendingCall {
+  begin(toolName: string, adapterName: string, risk: ToolRisk, args: Record<string, unknown>): McpTelemetryPendingCall {
     return {
       id: `mcp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       toolName,
@@ -116,8 +111,7 @@ class McpTelemetry {
     const successes = this.records.filter(record => record.status === 'success').length;
     const errors = calls - successes;
     const durations = this.records.map(record => record.durationMs).sort((a, b) => a - b);
-    const p95Index =
-      durations.length > 0 ? Math.min(durations.length - 1, Math.ceil(durations.length * 0.95) - 1) : 0;
+    const p95Index = durations.length > 0 ? Math.min(durations.length - 1, Math.ceil(durations.length * 0.95) - 1) : 0;
     const callsByRisk: Record<ToolRisk, number> = { low: 0, medium: 0, high: 0, critical: 0 };
     const callsByTool: Record<string, number> = {};
 
