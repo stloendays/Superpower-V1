@@ -37,7 +37,12 @@ export type {
 } from './execution-policy';
 
 export { mcpTelemetry, McpTelemetry } from './mcp-telemetry';
-export type { McpTelemetryRecord, McpTelemetryStatus, McpTelemetrySummary } from './mcp-telemetry';
+export type {
+  McpTelemetryPendingCall,
+  McpTelemetryRecord,
+  McpTelemetryStatus,
+  McpTelemetrySummary,
+} from './mcp-telemetry';
 
 // Main initialization system (Session 10)
 export {
