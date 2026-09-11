@@ -17,7 +17,7 @@ $InstallDir = Join-Path $env:LOCALAPPDATA 'Superpower\NativeMessaging'
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 
 if ([string]::IsNullOrWhiteSpace($HostExe)) {
-    $candidate = Join-Path $PSScriptRoot '..\..\..\build\Release\superpower-local-agent.exe'
+    $candidate = Join-Path $PSScriptRoot '..\..\..\..\build\local-agent\Release\superpower-local-agent.exe'
     $HostExe = [System.IO.Path]::GetFullPath($candidate)
 } else {
     $HostExe = [System.IO.Path]::GetFullPath($HostExe)
@@ -36,7 +36,9 @@ $manifest = [ordered]@{
     allowed_origins = @("chrome-extension://$ExtensionId/")
 }
 
-$manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $ManifestPath -Encoding UTF8
+$json = $manifest | ConvertTo-Json -Depth 5
+$utf8WithoutBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText($ManifestPath, $json, $utf8WithoutBom)
 
 $ChromeKey = "HKCU:\Software\Google\Chrome\NativeMessagingHosts\$HostName"
 New-Item -Force -Path $ChromeKey | Out-Null
