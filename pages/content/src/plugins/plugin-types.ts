@@ -24,18 +24,14 @@ export type AdapterCapability =
   | 'screenshot-capture'
   | 'dom-manipulation';
 
-export type PluginType = 
-  | 'sidebar'
-  | 'website-adapter'
-  | 'core-ui'
-  | 'extension';
+export type PluginType = 'sidebar' | 'website-adapter' | 'core-ui' | 'extension';
 
 export interface PluginContext {
   eventBus: PluginEventBus; // Use the defined PluginEventBus interface
-  stores: { 
+  stores: {
     // These 'any' types are placeholders as per original spec.
     // In a fully typed system, these would be specific store instances or slices.
-    app: any; 
+    app: any;
     connection: any;
     tool: any;
     ui: any;
@@ -60,7 +56,11 @@ export interface PluginContext {
 }
 
 export interface PluginUtils {
-  createElement: <K extends keyof HTMLElementTagNameMap>(tag: K, attrs?: Record<string, any>, children?: (Node | string)[]) => HTMLElementTagNameMap[K];
+  createElement: <K extends keyof HTMLElementTagNameMap>(
+    tag: K,
+    attrs?: Record<string, any>,
+    children?: (Node | string)[],
+  ) => HTMLElementTagNameMap[K];
   waitForElement: (selector: string, timeout?: number, root?: Document | Element) => Promise<HTMLElement | null>;
   injectCSS: (css: string, id?: string) => HTMLStyleElement;
   observeChanges: (targetNode: Node, callback: MutationCallback, options: MutationObserverInit) => MutationObserver;
@@ -86,6 +86,13 @@ export interface AdapterPlugin {
   insertText?(text: string, options?: { targetElement?: HTMLElement }): Promise<boolean>;
   submitForm?(options?: { formElement?: HTMLFormElement }): Promise<boolean>;
   attachFile?(file: File, options?: { inputElement?: HTMLInputElement }): Promise<boolean>;
+
+  /**
+   * Return the user's current draft prompt when it can be read safely from the
+   * active website composer. Superpower uses this locally for automatic MCP tool
+   * routing; the draft is not persisted by this adapter contract.
+   */
+  getCurrentPromptText?(): string | null;
 
   // Optional capabilities
   captureScreenshot?(): Promise<string>;
