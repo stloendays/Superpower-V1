@@ -25,7 +25,7 @@ const manifest = {
         },
     },
     version: packageJson.version,
-    version_name: 'V1',
+    version_name: `V${packageJson.version}`,
     description: 'Run MCP tools from supported AI web apps.',
     host_permissions: [
         '*://*.perplexity.ai/*',
@@ -47,7 +47,7 @@ const manifest = {
         '*://*.chat.z.ai/*',
         '*://*.chat.qwen.ai/*',
     ],
-    permissions: ['storage', 'clipboardWrite'],
+    permissions: ['storage', 'clipboardWrite', 'nativeMessaging'],
     // permissions: ['storage', 'scripting', 'clipboardWrite'],
     // options_page: 'options/index.html',
     background: {
@@ -125,13 +125,13 @@ const manifest = {
             js: ['content/index.iife.js'],
             run_at: 'document_idle',
         },
-        // Specific content script for T3 Chat tool call parsing
+        // Specific content script for T3 Chat
         {
             matches: ['*://*.t3.chat/*'],
             js: ['content/index.iife.js'],
             run_at: 'document_idle',
         },
-        // Specific content script for Mistral AI tool call parsing
+        // Specific content script for Mistral AI
         {
             matches: ['*://*.chat.mistral.ai/*'],
             js: ['content/index.iife.js'],
