@@ -166,6 +166,7 @@ QJsonObject MainWindow::requestForText(const QString& text) const {
       request.insert(QStringLiteral("action"), QStringLiteral("memory.remember"));
       args.insert(QStringLiteral("alias"), payload.left(separator).trimmed());
       args.insert(QStringLiteral("path"), payload.mid(separator + 1).trimmed());
+      args.insert(QStringLiteral("approved"), true);
     }
   } else if (clean.startsWith(QStringLiteral("/find "), Qt::CaseInsensitive)) {
     request.insert(QStringLiteral("action"), QStringLiteral("file.search"));
@@ -178,6 +179,7 @@ QJsonObject MainWindow::requestForText(const QString& text) const {
     request.insert(QStringLiteral("action"), QStringLiteral("memory.add_root"));
     args.insert(QStringLiteral("path"), clean.mid(6).trimmed());
     args.insert(QStringLiteral("recursive"), true);
+    args.insert(QStringLiteral("approved"), true);
   } else if (clean.compare(QStringLiteral("/list"), Qt::CaseInsensitive) == 0) {
     request.insert(QStringLiteral("action"), QStringLiteral("memory.list"));
   } else {
@@ -224,7 +226,8 @@ void MainWindow::rememberFolder() {
   const QJsonObject request{{QStringLiteral("id"), QStringLiteral("gui-%1").arg(++requestCounter_)},
                             {QStringLiteral("action"), QStringLiteral("memory.remember")},
                             {QStringLiteral("args"), QJsonObject{{QStringLiteral("alias"), alias},
-                                                                 {QStringLiteral("path"), path}}}};
+                                                                 {QStringLiteral("path"), path},
+                                                                 {QStringLiteral("approved"), true}}}};
   renderAgentResponse(core_.handle(request));
   refreshMemoryStatus();
 }
@@ -237,7 +240,8 @@ void MainWindow::addSearchRoot() {
                             {QStringLiteral("action"), QStringLiteral("memory.add_root")},
                             {QStringLiteral("args"), QJsonObject{{QStringLiteral("path"), path},
                                                                  {QStringLiteral("label"), QFileInfo(path).fileName()},
-                                                                 {QStringLiteral("recursive"), true}}}};
+                                                                 {QStringLiteral("recursive"), true},
+                                                                 {QStringLiteral("approved"), true}}}};
   renderAgentResponse(core_.handle(request));
   refreshMemoryStatus();
 }
