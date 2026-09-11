@@ -154,6 +154,9 @@ bool MemoryStore::rememberLocation(const QString& alias, const QString& path, co
   const QString normalized = normalizeExistingPath(path, error);
   if (normalized.isEmpty()) return false;
   const QString kind = QFileInfo(normalized).isDir() ? QStringLiteral("directory") : QStringLiteral("file");
+  QString cleanNote = note;
+  if (cleanNote.isNull()) cleanNote = QStringLiteral("");
+  cleanNote = cleanNote.trimmed().left(1000);
 
   QSqlQuery query(database_);
   query.prepare(QStringLiteral(
@@ -164,7 +167,7 @@ bool MemoryStore::rememberLocation(const QString& alias, const QString& path, co
   query.bindValue(QStringLiteral(":alias"), cleanAlias);
   query.bindValue(QStringLiteral(":path"), normalized);
   query.bindValue(QStringLiteral(":kind"), kind);
-  query.bindValue(QStringLiteral(":note"), note.trimmed().left(1000));
+  query.bindValue(QStringLiteral(":note"), cleanNote);
   if (!query.exec()) {
     if (error) *error = sqlError(query);
     return false;
