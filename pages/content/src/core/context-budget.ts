@@ -26,15 +26,23 @@ export const DEFAULT_CONTEXT_BUDGET: Readonly<ContextBudgetConfig> = Object.free
   charsPerEstimatedToken: 4,
 });
 
-export const resolveContextBudget = (overrides: Partial<ContextBudgetConfig> = {}): ContextBudgetConfig => {
-  const definedOverrides = Object.fromEntries(
-    Object.entries(overrides).filter(([, value]) => value !== undefined),
-  ) as Partial<ContextBudgetConfig>;
+const isPositiveFiniteNumber = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value > 0;
 
-  return {
-    ...DEFAULT_CONTEXT_BUDGET,
-    ...definedOverrides,
-  };
+export const resolveContextBudget = (overrides: Partial<ContextBudgetConfig> = {}): ContextBudgetConfig => {
+  const resolved = { ...DEFAULT_CONTEXT_BUDGET };
+
+  if (isPositiveFiniteNumber(overrides.maxInstructionChars)) resolved.maxInstructionChars = overrides.maxInstructionChars;
+  if (isPositiveFiniteNumber(overrides.maxToolCount)) resolved.maxToolCount = Math.floor(overrides.maxToolCount);
+  if (isPositiveFiniteNumber(overrides.maxToolChars)) resolved.maxToolChars = overrides.maxToolChars;
+  if (isPositiveFiniteNumber(overrides.maxCustomInstructionChars)) {
+    resolved.maxCustomInstructionChars = overrides.maxCustomInstructionChars;
+  }
+  if (isPositiveFiniteNumber(overrides.charsPerEstimatedToken)) {
+    resolved.charsPerEstimatedToken = overrides.charsPerEstimatedToken;
+  }
+
+  return resolved;
 };
 
 export const estimateTokens = (text: string, charsPerToken = DEFAULT_CONTEXT_BUDGET.charsPerEstimatedToken): number => {
@@ -69,7 +77,7 @@ export const getContextBudgetReport = (
   return {
     chars,
     estimatedTokens: estimateTokens(text, resolved.charsPerEstimatedToken),
-    utilization: resolved.maxInstructionChars > 0 ? chars / resolved.maxInstructionChars : 1,
+    utilization: chars / resolved.maxInstructionChars,
     withinBudget: chars <= resolved.maxInstructionChars,
   };
 };
