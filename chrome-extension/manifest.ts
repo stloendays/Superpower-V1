@@ -48,10 +48,9 @@ const manifest = {
     '*://*.kimi.com/*',
     '*://*.chat.z.ai/*',
     '*://*.chat.qwen.ai/*',
-
   ],
 
-  permissions: ['storage', 'clipboardWrite'],
+  permissions: ['storage', 'clipboardWrite', 'nativeMessaging'],
   // permissions: ['storage', 'scripting', 'clipboardWrite'],
   // options_page: 'options/index.html',
   background: {
@@ -129,13 +128,13 @@ const manifest = {
       js: ['content/index.iife.js'],
       run_at: 'document_idle',
     },
-    // Specific content script for T3 Chat tool call parsing
+    // Specific content script for T3 Chat
     {
       matches: ['*://*.t3.chat/*'],
       js: ['content/index.iife.js'],
       run_at: 'document_idle',
     },
-    // Specific content script for Mistral AI tool call parsing
+    // Specific content script for Mistral AI
     {
       matches: ['*://*.chat.mistral.ai/*'],
       js: ['content/index.iife.js'],
@@ -164,7 +163,6 @@ const manifest = {
       js: ['content/index.iife.js'],
       run_at: 'document_idle',
     },
-
   ],
   // devtools_page: 'devtools/index.html',
   web_accessible_resources: [
