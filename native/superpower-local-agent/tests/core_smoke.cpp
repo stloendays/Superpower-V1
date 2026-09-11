@@ -45,7 +45,7 @@ int main(int argc, char* argv[]) {
       {QStringLiteral("id"), QStringLiteral("remember")},
       {QStringLiteral("action"), QStringLiteral("memory.remember")},
       {QStringLiteral("args"), QJsonObject{{QStringLiteral("alias"), QStringLiteral("catalyst")},
-                                           {QStringLiteral("path"), projectDir}}}},
+                                           {QStringLiteral("path"), projectDir}}},
   });
   if (!require(rememberResponse.value(QStringLiteral("ok")).toBool(), "remember action should succeed")) return 1;
 
