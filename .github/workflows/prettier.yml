@@ -1,9 +1,9 @@
-name: Formating validation
+name: Formatting validation
 
 on:
   pull_request:
   push:
-    branches: [ main, dev ]
+    branches: [main, dev]
 
 jobs:
   prettier:
@@ -12,15 +12,44 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-      - name: Run Prettier
-        id: prettier-run
-        uses: rutajdash/prettier-cli-action@v1.0.0
         with:
-          config_path: ./.prettierrc
-          file_pattern: "*.{js,jsx,ts,tsx,json}"
-      - name: Prettier Output
-        if: ${{ failure() }}
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --prefer-offline
+
+      - name: Check formatting of changed files
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
         run: |
-          echo "The following files aren't formatted properly:"
-          echo "${{steps.prettier-run.outputs.prettier_output}}"
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            BASE_SHA="$PR_BASE_SHA"
+          else
+            BASE_SHA="$PUSH_BEFORE_SHA"
+            if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+              BASE_SHA="$(git rev-parse HEAD^)"
+            fi
+          fi
+
+          mapfile -d '' CHANGED_FILES < <(
+            git diff --name-only -z --diff-filter=ACMR "$BASE_SHA" HEAD -- \
+              '*.js' '*.jsx' '*.ts' '*.tsx' '*.json'
+          )
+
+          if [ "${#CHANGED_FILES[@]}" -eq 0 ]; then
+            echo 'No changed JavaScript, TypeScript, or JSON files to check.'
+            exit 0
+          fi
+
+          printf 'Checking %s changed file(s):\n' "${#CHANGED_FILES[@]}"
+          printf ' - %s\n' "${CHANGED_FILES[@]}"
+          pnpm exec prettier --check "${CHANGED_FILES[@]}"

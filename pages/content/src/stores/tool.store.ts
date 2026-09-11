@@ -1,12 +1,23 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { eventBus } from '../events';
+import { evaluateToolExecution } from '../core/execution-policy';
+import { mcpTelemetry } from '../core/mcp-telemetry';
 import { getToolEnablementState, saveToolEnablementState } from '../utils/storage';
 import type { Tool, DetectedTool, ToolExecution } from '../types/stores';
 import { createLogger } from '@extension/shared/lib/logger';
 
-
 const logger = createLogger('useToolStore');
+const pendingTelemetry = new Map<string, ReturnType<typeof mcpTelemetry.begin>>();
+
+const getResultChars = (value: unknown): number => {
+  if (typeof value === 'string') return value.length;
+  try {
+    return JSON.stringify(value)?.length ?? 0;
+  } catch {
+    return 0;
+  }
+};
 
 export interface ToolState {
   availableTools: Tool[];
@@ -14,19 +25,17 @@ export interface ToolState {
   toolExecutions: Record<string, ToolExecution>; // Store executions by ID
   isExecuting: boolean;
   lastExecutionId: string | null;
-  // New: Tool enablement state
-  enabledTools: Set<string>; // Set of enabled tool names
-  isLoadingEnablement: boolean; // Loading state for tool enablement
-  
+  enabledTools: Set<string>;
+  isLoadingEnablement: boolean;
+
   // Actions
   setAvailableTools: (tools: Tool[]) => void;
   addDetectedTool: (tool: DetectedTool) => void;
   clearDetectedTools: () => void;
-  startToolExecution: (toolName: string, parameters: Record<string, any>) => string; // Returns execution ID
+  startToolExecution: (toolName: string, parameters: Record<string, any>) => string;
   updateToolExecution: (execution: Partial<ToolExecution> & { id: string }) => void;
   completeToolExecution: (id: string, result: any, status: 'success' | 'error', error?: string) => void;
   getToolExecution: (id: string) => ToolExecution | undefined;
-  // New: Tool enablement actions
   enableTool: (toolName: string) => void;
   disableTool: (toolName: string) => void;
   enableAllTools: () => void;
@@ -35,14 +44,29 @@ export interface ToolState {
   loadToolEnablementState: () => Promise<void>;
 }
 
-const initialState: Omit<ToolState, 'setAvailableTools' | 'addDetectedTool' | 'clearDetectedTools' | 'startToolExecution' | 'updateToolExecution' | 'completeToolExecution' | 'getToolExecution' | 'enableTool' | 'disableTool' | 'enableAllTools' | 'disableAllTools' | 'isToolEnabled' | 'loadToolEnablementState'> = {
+const initialState: Omit<
+  ToolState,
+  | 'setAvailableTools'
+  | 'addDetectedTool'
+  | 'clearDetectedTools'
+  | 'startToolExecution'
+  | 'updateToolExecution'
+  | 'completeToolExecution'
+  | 'getToolExecution'
+  | 'enableTool'
+  | 'disableTool'
+  | 'enableAllTools'
+  | 'disableAllTools'
+  | 'isToolEnabled'
+  | 'loadToolEnablementState'
+> = {
   availableTools: [],
   detectedTools: [],
   toolExecutions: {},
   isExecuting: false,
   lastExecutionId: null,
-  enabledTools: new Set(), // Initially empty, will be populated when tools are set
-  isLoadingEnablement: false, // Initially not loading
+  enabledTools: new Set(),
+  isLoadingEnablement: false,
 };
 
 export const useToolStore = create<ToolState>()(
@@ -52,16 +76,24 @@ export const useToolStore = create<ToolState>()(
 
       setAvailableTools: (tools: Tool[]) => {
         set({ availableTools: tools });
-        logger.debug('[ToolStore] Available tools updated:', tools);
+        logger.debug('[ToolStore] Available tools updated', {
+          count: tools.length,
+          names: tools.map(tool => tool.name),
+        });
         eventBus.emit('tool:list-updated', { tools });
-        
-        // Load tool enablement state from storage
-        get().loadToolEnablementState();
+
+        // Load tool enablement state from storage.
+        void get().loadToolEnablementState();
       },
 
       addDetectedTool: (tool: DetectedTool) => {
         set(state => ({ detectedTools: [...state.detectedTools, tool] }));
-        logger.debug('[ToolStore] Tool detected:', tool);
+        logger.debug('[ToolStore] Tool detected', {
+          name: tool.name,
+          source: tool.source || 'unknown',
+          confidence: tool.confidence,
+          parameterKeys: Object.keys(tool.parameters || {}),
+        });
         eventBus.emit('tool:detected', { tools: [tool], source: tool.source || 'unknown' });
       },
 
@@ -72,6 +104,13 @@ export const useToolStore = create<ToolState>()(
 
       startToolExecution: (toolName: string, parameters: Record<string, any>): string => {
         const executionId = `exec_${toolName}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        const tool = get().availableTools.find(candidate => candidate.name === toolName);
+        const policy = evaluateToolExecution(toolName, parameters, tool?.description || '', 'audit');
+        const adapterName =
+          typeof window !== 'undefined' ? window.location.hostname || 'content-script' : 'content-script';
+
+        pendingTelemetry.set(executionId, mcpTelemetry.begin(toolName, adapterName, policy.risk, parameters));
+
         const newExecution: ToolExecution = {
           id: executionId,
           toolName,
@@ -80,12 +119,22 @@ export const useToolStore = create<ToolState>()(
           timestamp: Date.now(),
           result: null,
         };
+
         set(state => ({
           toolExecutions: { ...state.toolExecutions, [executionId]: newExecution },
           isExecuting: true,
           lastExecutionId: executionId,
         }));
-        logger.debug(`Starting execution for ${toolName} (ID: ${executionId})`, parameters);
+
+        // Do not log parameter values. MCP arguments may contain credentials, file
+        // contents, messages, or other user data.
+        logger.debug(`[ToolStore] Starting execution for ${toolName} (ID: ${executionId})`, {
+          risk: policy.risk,
+          decision: policy.decision,
+          parameterKeys: Object.keys(parameters).sort(),
+          sensitiveArgumentKeys: policy.sensitiveArgumentKeys,
+        });
+
         eventBus.emit('tool:execution-started', { toolName, callId: executionId });
         return executionId;
       },
@@ -93,56 +142,80 @@ export const useToolStore = create<ToolState>()(
       updateToolExecution: (executionUpdate: Partial<ToolExecution> & { id: string }) => {
         const { id, ...updateData } = executionUpdate;
         const existingExecution = get().toolExecutions[id];
-        if (existingExecution) {
-          const updatedExecution = { ...existingExecution, ...updateData, timestamp: Date.now() };
-          set(state => ({
-            toolExecutions: { ...state.toolExecutions, [id]: updatedExecution },
-            isExecuting: updatedExecution.status === 'pending',
-          }));
-          logger.debug(`Execution updated (ID: ${id}):`, updatedExecution);
-          if (updatedExecution.status === 'success' || updatedExecution.status === 'error') {
-             eventBus.emit('tool:execution-completed', { execution: updatedExecution });
-          }
-        } else {
+        if (!existingExecution) {
           logger.warn(`Attempted to update non-existent execution (ID: ${id})`);
+          return;
+        }
+
+        const updatedExecution = { ...existingExecution, ...updateData, timestamp: Date.now() };
+        set(state => ({
+          toolExecutions: { ...state.toolExecutions, [id]: updatedExecution },
+          isExecuting: updatedExecution.status === 'pending',
+        }));
+
+        logger.debug(`Execution updated (ID: ${id})`, {
+          toolName: updatedExecution.toolName,
+          status: updatedExecution.status,
+          hasResult: updatedExecution.result !== null && updatedExecution.result !== undefined,
+          resultChars: getResultChars(updatedExecution.result),
+          hasError: Boolean(updatedExecution.error),
+        });
+
+        if (updatedExecution.status === 'success' || updatedExecution.status === 'error') {
+          eventBus.emit('tool:execution-completed', { execution: updatedExecution });
         }
       },
-      
+
       completeToolExecution: (id: string, result: any, status: 'success' | 'error', error?: string) => {
         const execution = get().toolExecutions[id];
-        if (execution) {
-          const completedExecution: ToolExecution = {
-            ...execution,
-            result,
-            status,
-            error,
-            timestamp: Date.now(),
-          };
-          set(state => ({
-            toolExecutions: { ...state.toolExecutions, [id]: completedExecution },
-            isExecuting: Object.values(state.toolExecutions).some(ex => ex.id !== id && ex.status === 'pending'),
-          }));
-          logger.debug(`Execution ${status} (ID: ${id}):`, completedExecution);
-          eventBus.emit('tool:execution-completed', { execution: completedExecution });
-          if (status === 'error') {
-            eventBus.emit('tool:execution-failed', { toolName: execution.toolName, error: error || 'Unknown execution error', callId: id });
-          }
-        } else {
+        if (!execution) {
           logger.warn(`Attempted to complete non-existent execution (ID: ${id})`);
+          return;
+        }
+
+        const completedExecution: ToolExecution = {
+          ...execution,
+          result,
+          status,
+          error,
+          timestamp: Date.now(),
+        };
+
+        set(state => ({
+          toolExecutions: { ...state.toolExecutions, [id]: completedExecution },
+          isExecuting: Object.values(state.toolExecutions).some(ex => ex.id !== id && ex.status === 'pending'),
+        }));
+
+        const pending = pendingTelemetry.get(id);
+        if (pending) {
+          if (status === 'success') mcpTelemetry.success(pending, result);
+          else mcpTelemetry.error(pending, error ? new Error(error) : new Error('Unknown execution error'));
+          pendingTelemetry.delete(id);
+        }
+
+        logger.debug(`Execution ${status} (ID: ${id})`, {
+          toolName: execution.toolName,
+          resultChars: getResultChars(result),
+          hasError: Boolean(error),
+        });
+
+        eventBus.emit('tool:execution-completed', { execution: completedExecution });
+        if (status === 'error') {
+          eventBus.emit('tool:execution-failed', {
+            toolName: execution.toolName,
+            error: error || 'Unknown execution error',
+            callId: id,
+          });
         }
       },
 
-      getToolExecution: (id: string): ToolExecution | undefined => {
-        return get().toolExecutions[id];
-      },
+      getToolExecution: (id: string): ToolExecution | undefined => get().toolExecutions[id],
 
-      // New: Tool enablement methods
       enableTool: (toolName: string) => {
         set(state => {
           const newEnabledTools = new Set([...state.enabledTools, toolName]);
-          // Save to storage asynchronously
-          saveToolEnablementState(newEnabledTools).catch(error => 
-            logger.error('[ToolStore] Failed to save tool enablement state:', error)
+          saveToolEnablementState(newEnabledTools).catch(error =>
+            logger.error('[ToolStore] Failed to save tool enablement state:', error),
           );
           return { enabledTools: newEnabledTools };
         });
@@ -153,9 +226,8 @@ export const useToolStore = create<ToolState>()(
         set(state => {
           const newEnabledTools = new Set(state.enabledTools);
           newEnabledTools.delete(toolName);
-          // Save to storage asynchronously
-          saveToolEnablementState(newEnabledTools).catch(error => 
-            logger.error('[ToolStore] Failed to save tool enablement state:', error)
+          saveToolEnablementState(newEnabledTools).catch(error =>
+            logger.error('[ToolStore] Failed to save tool enablement state:', error),
           );
           return { enabledTools: newEnabledTools };
         });
@@ -165,9 +237,8 @@ export const useToolStore = create<ToolState>()(
       enableAllTools: () => {
         set(state => {
           const newEnabledTools = new Set(state.availableTools.map(tool => tool.name));
-          // Save to storage asynchronously
-          saveToolEnablementState(newEnabledTools).catch(error => 
-            logger.error('[ToolStore] Failed to save tool enablement state:', error)
+          saveToolEnablementState(newEnabledTools).catch(error =>
+            logger.error('[ToolStore] Failed to save tool enablement state:', error),
           );
           return { enabledTools: newEnabledTools };
         });
@@ -177,28 +248,23 @@ export const useToolStore = create<ToolState>()(
       disableAllTools: () => {
         const newEnabledTools = new Set<string>();
         set({ enabledTools: newEnabledTools });
-        // Save to storage asynchronously
-        saveToolEnablementState(newEnabledTools).catch(error => 
-          logger.error('[ToolStore] Failed to save tool enablement state:', error)
+        saveToolEnablementState(newEnabledTools).catch(error =>
+          logger.error('[ToolStore] Failed to save tool enablement state:', error),
         );
         logger.debug('[ToolStore] All tools disabled');
       },
 
-      isToolEnabled: (toolName: string): boolean => {
-        return get().enabledTools.has(toolName);
-      },
+      isToolEnabled: (toolName: string): boolean => get().enabledTools.has(toolName),
 
       loadToolEnablementState: async () => {
         set({ isLoadingEnablement: true });
         try {
           const storedEnabledTools = await getToolEnablementState();
           const state = get();
-          
-          // If no stored state and we have available tools, enable all by default
+
           if (storedEnabledTools.size === 0 && state.availableTools.length > 0) {
             const allToolsEnabled = new Set(state.availableTools.map(tool => tool.name));
             set({ enabledTools: allToolsEnabled, isLoadingEnablement: false });
-            // Save the default state
             await saveToolEnablementState(allToolsEnabled);
             logger.debug('[ToolStore] No stored state found, enabled all tools by default');
           } else {
@@ -211,6 +277,6 @@ export const useToolStore = create<ToolState>()(
         }
       },
     }),
-    { name: 'ToolStore', store: 'tool' }
-  )
+    { name: 'ToolStore', store: 'tool' },
+  ),
 );
