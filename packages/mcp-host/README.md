@@ -35,13 +35,13 @@ Prefer environment references instead of putting secret values directly in comma
 For HTTP:
 
 ```bash
-export MCP_TOKEN='...'
+export MCP_AUTH_HEADER='Bearer ...'
 pnpm -F @superpower/mcp-host start -- connect \
   --http https://example.com/mcp \
   --header-env Authorization=MCP_AUTH_HEADER
 ```
 
-`MCP_AUTH_HEADER` should contain the complete header value (for example a bearer value). Superpower reads it at runtime and does not retain it in telemetry.
+`MCP_AUTH_HEADER` should contain the complete header value. Superpower reads it at runtime and does not retain it in telemetry.
 
 For stdio child processes, use `--server-env NAME=ENV_VAR` to map a host environment variable into the child without printing its value.
 
