@@ -70,9 +70,9 @@ jobs:
             echo 'Content-script TypeScript check is clean.'
           fi
 
-      - name: Write canonical MCP formatting
+      - name: Check MCP formatting
         run: >-
-          pnpm exec prettier --write
+          pnpm exec prettier --check
           packages/shared/lib/mcp-core/context-budget.ts
           packages/shared/lib/mcp-core/tool-router.ts
           packages/shared/lib/mcp-core/execution-policy.ts
@@ -89,16 +89,3 @@ jobs:
           pages/content/src/stores/tool.store.ts
           pages/content/src/components/sidebar/Instructions/instructionGeneratorJson.ts
           pages/content/src/components/sidebar/Instructions/InstructionManager.tsx
-
-      - name: Upload canonical MCP formatting
-        uses: actions/upload-artifact@v4
-        with:
-          name: mcp-v13-prettier-output
-          path: |
-            packages/shared/lib/mcp-core
-            packages/shared/index.mts
-            pages/content/src/core/context-budget.ts
-            pages/content/src/core/tool-router.ts
-            pages/content/src/core/execution-policy.ts
-            pages/content/src/core/mcp-telemetry.ts
-          retention-days: 1

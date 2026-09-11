@@ -1,13 +1,5 @@
-import {
-  DEFAULT_CONTEXT_BUDGET,
-  resolveContextBudget,
-  type ContextBudgetConfig,
-} from './context-budget.js';
-import {
-  evaluateToolExecution,
-  type ExecutionPolicyMode,
-  type ExecutionPolicyResult,
-} from './execution-policy.js';
+import { DEFAULT_CONTEXT_BUDGET, resolveContextBudget, type ContextBudgetConfig } from './context-budget.js';
+import { evaluateToolExecution, type ExecutionPolicyMode, type ExecutionPolicyResult } from './execution-policy.js';
 import { McpTelemetry, type McpTelemetryRecord, type McpTelemetrySummary } from './mcp-telemetry.js';
 import { routeTools, type RoutableTool, type ToolRouteResult, type ToolRouterOptions } from './tool-router.js';
 
@@ -24,9 +16,7 @@ export interface McpGatewayConfirmationContext {
   policy: ExecutionPolicyResult;
 }
 
-export type McpGatewayConfirmationHandler = (
-  context: McpGatewayConfirmationContext,
-) => boolean | Promise<boolean>;
+export type McpGatewayConfirmationHandler = (context: McpGatewayConfirmationContext) => boolean | Promise<boolean>;
 
 export interface McpGatewayOptions {
   taskFocus?: string;
