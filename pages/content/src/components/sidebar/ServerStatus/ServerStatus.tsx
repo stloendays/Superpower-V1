@@ -3,6 +3,7 @@ import type React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMcpCommunication } from '@src/hooks/useMcpCommunication';
 import { useConnectionStatus, useServerConfig } from '../../../hooks';
+import { useConnectionStore } from '@src/stores/connection.store';
 import { Typography, Icon, Button } from '../ui';
 import { cn } from '@src/lib/utils';
 import { Card, CardContent } from '@src/components/ui/card';
@@ -14,36 +15,23 @@ import {
   type ParsedConnectionInput,
   type RecentConnection,
 } from './connection-input';
+import {
+  diagnoseConnectionError,
+  type ConnectionDiagnosis,
+} from './connection-diagnosis';
 
 interface ServerStatusProps {
   status: string;
+}
+
+interface ConnectOptions {
+  allowAutoRepair?: boolean;
 }
 
 const TRANSPORT_LABELS: Record<ConnectionType, string> = {
   'streamable-http': 'Streamable HTTP',
   sse: 'Server-Sent Events (SSE)',
   websocket: 'WebSocket',
-};
-
-const friendlyConnectionError = (error: string): string => {
-  const normalized = error.toLowerCase();
-  if (!normalized) return '';
-  if (normalized.includes('404') || normalized.includes('not found')) {
-    return 'That server address could not be found. Check the address and try again.';
-  }
-  if (normalized.includes('403') || normalized.includes('forbidden')) {
-    return 'The server refused access. Check its authentication or permissions.';
-  }
-  if (normalized.includes('econnrefused') || normalized.includes('connection refused')) {
-    return 'The server is not accepting connections. Make sure it is running.';
-  }
-  if (normalized.includes('timeout') || normalized.includes('etimedout')) {
-    return 'The server took too long to respond. Check that it is reachable and try again.';
-  }
-  if (normalized.includes('enotfound') || normalized.includes('failed to fetch')) {
-    return 'Superpower could not reach that server. Check the address, network access, and CORS settings.';
-  }
-  return 'Superpower could not connect to this server. Check the address or open Advanced for technical details.';
 };
 
 const recentConnectionLabel = (connection: RecentConnection): string => {
@@ -78,6 +66,9 @@ const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) =>
   const [isEditingUri, setIsEditingUri] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [localError, setLocalError] = useState('');
+  const [rawConnectionError, setRawConnectionError] = useState('');
+  const [diagnosis, setDiagnosis] = useState<ConnectionDiagnosis | null>(null);
+  const [repairNotice, setRepairNotice] = useState('');
   const [recognizedLabel, setRecognizedLabel] = useState('');
   const [authNotImported, setAuthNotImported] = useState(false);
   const [recentConnections, setRecentConnections] = useState<RecentConnection[]>([]);
@@ -122,8 +113,51 @@ const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) =>
 
   const effectiveConnectionType = manualTransport ? connectionType : resolvedAutomaticType;
 
-  const connectResolved = useCallback(
+  const persistAndReconnect = useCallback(
+    async (connection: Pick<ParsedConnectionInput, 'uri' | 'connectionType'>) => {
+      setServerConfig({ uri: connection.uri, connectionType: connection.connectionType });
+      const updated = await updateServerConfig({
+        uri: connection.uri,
+        connectionType: connection.connectionType,
+      });
+      if (!updated) throw new Error('Server configuration was not accepted.');
+
+      const connected = await forceReconnect();
+      if (!connected) {
+        const latestError = useConnectionStore.getState().error;
+        throw new Error(latestError || 'Connection attempt failed.');
+      }
+    },
+    [setServerConfig, updateServerConfig, forceReconnect],
+  );
+
+  const completeSuccessfulConnection = useCallback(
     async (connection: Pick<ParsedConnectionInput, 'uri' | 'connectionType' | 'label'>) => {
+      setServerUri(connection.uri);
+      setConnectionType(connection.connectionType);
+      setIsEditingUri(false);
+      setShowSetup(false);
+      setRecognizedLabel('');
+      setAuthNotImported(false);
+      setLocalError('');
+      setRawConnectionError('');
+      setDiagnosis(null);
+
+      const nextRecent = await rememberRecentConnection({
+        uri: connection.uri,
+        connectionType: connection.connectionType,
+        label: connection.label,
+      });
+      setRecentConnections(nextRecent);
+    },
+    [],
+  );
+
+  const connectResolved = useCallback(
+    async (
+      connection: Pick<ParsedConnectionInput, 'uri' | 'connectionType' | 'label'>,
+      options: ConnectOptions = {},
+    ) => {
       if (!isInitialized) {
         setLocalError('Superpower is still starting. Try again in a moment.');
         return;
@@ -131,49 +165,83 @@ const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) =>
 
       setIsConnecting(true);
       setLocalError('');
+      setRawConnectionError('');
+      setDiagnosis(null);
+      setRepairNotice('');
 
       try {
-        setServerConfig({ uri: connection.uri, connectionType: connection.connectionType });
-        const updated = await updateServerConfig({
-          uri: connection.uri,
-          connectionType: connection.connectionType,
-        });
-        if (!updated) throw new Error('Server configuration was not accepted.');
-
-        const connected = await forceReconnect();
-        if (!connected) throw new Error('Connection attempt failed.');
-
-        setServerUri(connection.uri);
-        setConnectionType(connection.connectionType);
-        setIsEditingUri(false);
-        setShowSetup(false);
-        setRecognizedLabel('');
-        setAuthNotImported(false);
-        const nextRecent = await rememberRecentConnection({
-          uri: connection.uri,
-          connectionType: connection.connectionType,
-          label: connection.label,
-        });
-        setRecentConnections(nextRecent);
+        await persistAndReconnect(connection);
+        await completeSuccessfulConnection(connection);
+        return;
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        setLocalError(friendlyConnectionError(message) || 'Connection failed.');
+        const firstRawError =
+          useConnectionStore.getState().error || (error instanceof Error ? error.message : String(error));
+        const firstDiagnosis = diagnoseConnectionError(
+          firstRawError,
+          connection.uri,
+          connection.connectionType,
+        );
+
+        if (
+          options.allowAutoRepair &&
+          firstDiagnosis.canAutoRepair &&
+          firstDiagnosis.suggestedConnectionType &&
+          firstDiagnosis.suggestedConnectionType !== connection.connectionType
+        ) {
+          const repairedConnection = {
+            ...connection,
+            connectionType: firstDiagnosis.suggestedConnectionType,
+          };
+          setRepairNotice(
+            `Connection method mismatch detected. Trying ${TRANSPORT_LABELS[repairedConnection.connectionType]} once…`,
+          );
+
+          try {
+            await persistAndReconnect(repairedConnection);
+            await completeSuccessfulConnection(repairedConnection);
+            setRepairNotice(
+              `Connected automatically using ${TRANSPORT_LABELS[repairedConnection.connectionType]}.`,
+            );
+            return;
+          } catch (repairError) {
+            const repairRawError =
+              useConnectionStore.getState().error ||
+              (repairError instanceof Error ? repairError.message : String(repairError));
+            const repairDiagnosis = diagnoseConnectionError(
+              repairRawError,
+              repairedConnection.uri,
+              repairedConnection.connectionType,
+            );
+            setRawConnectionError(repairRawError);
+            setDiagnosis(repairDiagnosis);
+            setLocalError(repairDiagnosis.message);
+            setRepairNotice('');
+            setShowSetup(true);
+            return;
+          }
+        }
+
+        setRawConnectionError(firstRawError);
+        setDiagnosis(firstDiagnosis);
+        setLocalError(firstDiagnosis.message);
         setShowSetup(true);
       } finally {
         setIsConnecting(false);
       }
     },
-    [isInitialized, setServerConfig, updateServerConfig, forceReconnect],
+    [isInitialized, persistAndReconnect, completeSuccessfulConnection],
   );
 
   const connect = useCallback(async () => {
     const parsed = parseMcpConnectionInput(serverUri);
     if (!parsed.ok) {
+      setDiagnosis(null);
       setLocalError(parsed.error);
       return;
     }
 
     if (parsed.value.ignoredAuth || authNotImported) {
+      setDiagnosis(null);
       setLocalError(
         'This configuration contains authentication fields. Superpower recognized the endpoint but did not import secrets. Authenticated config import will be handled separately for safety.',
       );
@@ -187,11 +255,14 @@ const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) =>
         ? serverConfig.connectionType
         : parsed.value.connectionType;
 
-    await connectResolved({
-      uri: parsed.value.uri,
-      connectionType: selectedType,
-      label: parsed.value.label || recognizedLabel || undefined,
-    });
+    await connectResolved(
+      {
+        uri: parsed.value.uri,
+        connectionType: selectedType,
+        label: parsed.value.label || recognizedLabel || undefined,
+      },
+      { allowAutoRepair: !manualTransport },
+    );
   }, [
     serverUri,
     authNotImported,
@@ -211,26 +282,21 @@ const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) =>
       setIsEditingUri(false);
       setAuthNotImported(false);
       setRecognizedLabel(connection.label || '');
-      await connectResolved(connection);
+      await connectResolved(connection, { allowAutoRepair: true });
     },
     [connectResolved],
   );
 
   const reconnect = useCallback(async () => {
-    if (!isInitialized || busy) return;
-    setIsConnecting(true);
-    setLocalError('');
-    try {
-      const connected = await forceReconnect();
-      if (!connected) throw new Error('Connection attempt failed.');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setLocalError(friendlyConnectionError(message) || 'Connection failed.');
-      setShowSetup(true);
-    } finally {
-      setIsConnecting(false);
-    }
-  }, [isInitialized, busy, forceReconnect]);
+    if (!isInitialized || busy || !serverConfig.uri) return;
+    await connectResolved(
+      {
+        uri: serverConfig.uri,
+        connectionType: serverConfig.connectionType || inferConnectionType(serverConfig.uri),
+      },
+      { allowAutoRepair: !manualTransport },
+    );
+  }, [isInitialized, busy, serverConfig.uri, serverConfig.connectionType, manualTransport, connectResolved]);
 
   const handlePaste = useCallback((event: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const pasted = event.clipboardData.getData('text').trim();
@@ -240,6 +306,7 @@ const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) =>
     if (!parsed.ok) {
       if (pasted.startsWith('{')) {
         event.preventDefault();
+        setDiagnosis(null);
         setLocalError(parsed.error);
       }
       return;
@@ -251,6 +318,9 @@ const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) =>
     setManualTransport(false);
     setIsEditingUri(true);
     setLocalError('');
+    setRawConnectionError('');
+    setDiagnosis(null);
+    setRepairNotice('');
     setRecognizedLabel(parsed.value.label || (parsed.value.source === 'json' ? 'MCP configuration' : ''));
     setAuthNotImported(parsed.value.ignoredAuth);
   }, []);
@@ -258,8 +328,8 @@ const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) =>
   const statusPresentation = useMemo(() => {
     if (busy) {
       return {
-        title: 'Connecting…',
-        message: 'Superpower is checking the MCP server and preparing its tools.',
+        title: repairNotice ? 'Auto-repairing…' : 'Connecting…',
+        message: repairNotice || 'Superpower is checking the MCP server and preparing its tools.',
         icon: 'refresh' as const,
         iconClass: 'text-amber-600 dark:text-amber-400 animate-spin',
         iconBackground: 'bg-amber-100 dark:bg-amber-900/25',
@@ -286,10 +356,16 @@ const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) =>
       iconClass: 'text-slate-600 dark:text-slate-300',
       iconBackground: 'bg-slate-100 dark:bg-slate-800',
     };
-  }, [busy, isConnected, toolCount]);
+  }, [busy, isConnected, toolCount, repairNotice]);
 
-  const technicalError = localError || connectionError || '';
-  const visibleError = localError || friendlyConnectionError(connectionError || '');
+  const technicalError = rawConnectionError || connectionError || '';
+  const visibleError = localError || (connectionError
+    ? diagnoseConnectionError(
+        connectionError,
+        serverConfig.uri || serverUri,
+        serverConfig.connectionType || effectiveConnectionType,
+      ).message
+    : '');
   const jsonPreview = parsedPreview.ok && parsedPreview.value.source === 'json' ? parsedPreview.value : null;
 
   return (
@@ -332,10 +408,20 @@ const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) =>
           </div>
         </div>
 
+        {repairNotice && isConnected && !busy && (
+          <div className="mt-3 flex items-start gap-2 rounded-md bg-emerald-50 p-2.5 text-xs text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200">
+            <Icon name="check" size="xs" className="mt-0.5 shrink-0" />
+            <span>{repairNotice}</span>
+          </div>
+        )}
+
         {visibleError && !busy && (
           <div className="mt-3 flex items-start gap-2 rounded-md bg-amber-50 p-2.5 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
             <Icon name="alert-triangle" size="xs" className="mt-0.5 shrink-0" />
-            <span>{visibleError}</span>
+            <div className="min-w-0">
+              <div>{visibleError}</div>
+              {diagnosis?.action && <div className="mt-1 text-[10px] leading-4 opacity-80">{diagnosis.action}</div>}
+            </div>
           </div>
         )}
 
@@ -355,6 +441,9 @@ const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) =>
                   setServerUri(event.target.value);
                   setIsEditingUri(true);
                   setLocalError('');
+                  setRawConnectionError('');
+                  setDiagnosis(null);
+                  setRepairNotice('');
                   setRecognizedLabel('');
                   setAuthNotImported(false);
                 }}
@@ -451,6 +540,8 @@ const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) =>
                         onChange={event => {
                           const enabled = event.target.checked;
                           setManualTransport(enabled);
+                          setDiagnosis(null);
+                          setRepairNotice('');
                           if (enabled) setConnectionType(resolvedAutomaticType);
                         }}
                         className="h-3.5 w-3.5 rounded border-slate-300"
@@ -462,7 +553,11 @@ const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) =>
                   {manualTransport && (
                     <select
                       value={connectionType}
-                      onChange={event => setConnectionType(event.target.value as ConnectionType)}
+                      onChange={event => {
+                        setConnectionType(event.target.value as ConnectionType);
+                        setDiagnosis(null);
+                        setRepairNotice('');
+                      }}
                       className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-xs text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100">
                       <option value="streamable-http">Streamable HTTP</option>
                       <option value="sse">Server-Sent Events (SSE)</option>
@@ -471,8 +566,7 @@ const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) =>
                   )}
 
                   <div className="rounded-md border border-slate-200 bg-white p-2 text-[10px] leading-4 text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
-                    Browser connections require an MCP endpoint reachable from this page. Local stdio configs are
-                    recognized, but they must run through Superpower Host or a browser-accessible MCP proxy.
+                    Automatic repair may try one alternate HTTP transport only when the connection error clearly indicates a protocol mismatch. It never retries MCP tool calls. Local stdio configs must run through Superpower Host or a browser-accessible MCP proxy.
                   </div>
 
                   {technicalError && (
