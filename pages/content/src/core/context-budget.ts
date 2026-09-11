@@ -32,7 +32,8 @@ const isPositiveFiniteNumber = (value: unknown): value is number =>
 export const resolveContextBudget = (overrides: Partial<ContextBudgetConfig> = {}): ContextBudgetConfig => {
   const resolved = { ...DEFAULT_CONTEXT_BUDGET };
 
-  if (isPositiveFiniteNumber(overrides.maxInstructionChars)) resolved.maxInstructionChars = overrides.maxInstructionChars;
+  if (isPositiveFiniteNumber(overrides.maxInstructionChars))
+    resolved.maxInstructionChars = overrides.maxInstructionChars;
   if (isPositiveFiniteNumber(overrides.maxToolCount)) resolved.maxToolCount = Math.floor(overrides.maxToolCount);
   if (isPositiveFiniteNumber(overrides.maxToolChars)) resolved.maxToolChars = overrides.maxToolChars;
   if (isPositiveFiniteNumber(overrides.maxCustomInstructionChars)) {
