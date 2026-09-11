@@ -97,7 +97,9 @@ const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) =>
   }, [serverConfig.uri, serverConfig.connectionType, isEditingUri, manualTransport, serverUri]);
 
   useEffect(() => {
-    loadRecentConnections().then(setRecentConnections).catch(() => undefined);
+    loadRecentConnections()
+      .then(setRecentConnections)
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -390,7 +392,8 @@ const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) =>
 
             {authNotImported && (
               <div className="mt-2 rounded-md bg-amber-50 px-2 py-1.5 text-[10px] leading-4 text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
-                Endpoint recognized, but authentication fields were not imported or stored. Secret-aware config import will be a separate guarded flow.
+                Endpoint recognized, but authentication fields were not imported or stored. Secret-aware config import
+                will be a separate guarded flow.
               </div>
             )}
 
@@ -468,7 +471,8 @@ const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) =>
                   )}
 
                   <div className="rounded-md border border-slate-200 bg-white p-2 text-[10px] leading-4 text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
-                    Browser connections require an MCP endpoint reachable from this page. Local stdio configs are recognized, but they must run through Superpower Host or a browser-accessible MCP proxy.
+                    Browser connections require an MCP endpoint reachable from this page. Local stdio configs are
+                    recognized, but they must run through Superpower Host or a browser-accessible MCP proxy.
                   </div>
 
                   {technicalError && (

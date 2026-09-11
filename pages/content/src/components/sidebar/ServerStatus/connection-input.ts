@@ -15,9 +15,7 @@ export interface RecentConnection {
   lastUsedAt: number;
 }
 
-export type ConnectionInputResult =
-  | { ok: true; value: ParsedConnectionInput }
-  | { ok: false; error: string };
+export type ConnectionInputResult = { ok: true; value: ParsedConnectionInput } | { ok: false; error: string };
 
 const RECENT_CONNECTIONS_KEY = 'superpower:mcp-recent-connections:v1';
 const MAX_RECENT_CONNECTIONS = 5;
@@ -65,10 +63,7 @@ const hasAuthMaterial = (value: Record<string, unknown>): boolean => {
   return authKeys.some(key => key in value);
 };
 
-const extractRemoteEntry = (
-  entry: Record<string, unknown>,
-  label?: string,
-): ParsedConnectionInput | null => {
+const extractRemoteEntry = (entry: Record<string, unknown>, label?: string): ParsedConnectionInput | null => {
   const rawUri = entry.url ?? entry.uri ?? entry.endpoint ?? entry.serverUrl ?? entry.server_url;
   if (!isRemoteUri(rawUri)) return null;
 
