@@ -3,6 +3,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QJsonObject>
 #include <QTemporaryDir>
 
@@ -15,6 +16,16 @@ namespace {
 bool require(bool condition, const char* message) {
   if (condition) return true;
   std::cerr << "FAIL: " << message << '\n';
+  return false;
+}
+
+bool requireOk(const QJsonObject& response, const char* message) {
+  if (response.value(QStringLiteral("ok")).toBool(false)) return true;
+  const QJsonObject error = response.value(QStringLiteral("error")).toObject();
+  std::cerr << "FAIL: " << message << "\n  code: " << error.value(QStringLiteral("code")).toString().toStdString()
+            << "\n  message: " << error.value(QStringLiteral("message")).toString().toStdString()
+            << "\n  response: "
+            << QJsonDocument(response).toJson(QJsonDocument::Compact).toStdString() << '\n';
   return false;
 }
 
@@ -41,33 +52,51 @@ int main(int argc, char* argv[]) {
   QString error;
   if (!require(core.initialize(&error), qPrintable(error))) return 1;
 
-  const QJsonObject rememberResponse = core.handle(QJsonObject{
-      {QStringLiteral("id"), QStringLiteral("remember")},
+  const QJsonObject deniedRemember = core.handle(QJsonObject{
+      {QStringLiteral("id"), QStringLiteral("remember-denied")},
       {QStringLiteral("action"), QStringLiteral("memory.remember")},
       {QStringLiteral("args"), QJsonObject{{QStringLiteral("alias"), QStringLiteral("catalyst")},
                                            {QStringLiteral("path"), projectDir}}},
   });
-  if (!require(rememberResponse.value(QStringLiteral("ok")).toBool(), "remember action should succeed")) return 1;
+  if (!require(!deniedRemember.value(QStringLiteral("ok")).toBool(), "remember should require approval")) return 1;
+
+  const QJsonObject rememberResponse = core.handle(QJsonObject{
+      {QStringLiteral("id"), QStringLiteral("remember")},
+      {QStringLiteral("action"), QStringLiteral("memory.remember")},
+      {QStringLiteral("args"), QJsonObject{{QStringLiteral("alias"), QStringLiteral("catalyst")},
+                                           {QStringLiteral("path"), projectDir},
+                                           {QStringLiteral("approved"), true}}},
+  });
+  if (!requireOk(rememberResponse, "remember action should succeed")) return 1;
 
   const QJsonObject resolveResponse = core.handle(QJsonObject{
       {QStringLiteral("id"), QStringLiteral("resolve")},
       {QStringLiteral("action"), QStringLiteral("memory.resolve")},
       {QStringLiteral("args"), QJsonObject{{QStringLiteral("query"), QStringLiteral("catalyst")}}},
   });
-  if (!require(resolveResponse.value(QStringLiteral("ok")).toBool(), "resolve action should succeed")) return 1;
+  if (!requireOk(resolveResponse, "resolve action should succeed")) return 1;
   const QString resolvedPath =
       resolveResponse.value(QStringLiteral("result")).toObject().value(QStringLiteral("path")).toString();
   if (!require(QFileInfo(resolvedPath) == QFileInfo(projectDir), "remembered alias should resolve to the same path")) {
     return 1;
   }
 
-  const QJsonObject rootResponse = core.handle(QJsonObject{
-      {QStringLiteral("id"), QStringLiteral("root")},
+  const QJsonObject deniedRoot = core.handle(QJsonObject{
+      {QStringLiteral("id"), QStringLiteral("root-denied")},
       {QStringLiteral("action"), QStringLiteral("memory.add_root")},
       {QStringLiteral("args"), QJsonObject{{QStringLiteral("path"), projectDir},
                                            {QStringLiteral("recursive"), true}}},
   });
-  if (!require(rootResponse.value(QStringLiteral("ok")).toBool(), "search root action should succeed")) return 1;
+  if (!require(!deniedRoot.value(QStringLiteral("ok")).toBool(), "search root should require approval")) return 1;
+
+  const QJsonObject rootResponse = core.handle(QJsonObject{
+      {QStringLiteral("id"), QStringLiteral("root")},
+      {QStringLiteral("action"), QStringLiteral("memory.add_root")},
+      {QStringLiteral("args"), QJsonObject{{QStringLiteral("path"), projectDir},
+                                           {QStringLiteral("recursive"), true},
+                                           {QStringLiteral("approved"), true}}},
+  });
+  if (!requireOk(rootResponse, "search root action should succeed")) return 1;
 
   const QJsonObject searchResponse = core.handle(QJsonObject{
       {QStringLiteral("id"), QStringLiteral("search")},
@@ -75,7 +104,7 @@ int main(int argc, char* argv[]) {
       {QStringLiteral("args"), QJsonObject{{QStringLiteral("query"), QStringLiteral("stage2-report")},
                                            {QStringLiteral("max_results"), 10}}},
   });
-  if (!require(searchResponse.value(QStringLiteral("ok")).toBool(), "search action should succeed")) return 1;
+  if (!requireOk(searchResponse, "search action should succeed")) return 1;
   const QJsonArray matches =
       searchResponse.value(QStringLiteral("result")).toObject().value(QStringLiteral("matches")).toArray();
   if (!require(!matches.isEmpty(), "approved-root search should find the test file")) return 1;
