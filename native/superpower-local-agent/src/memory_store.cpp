@@ -24,6 +24,11 @@ void clearError(QString* error) {
   if (error) error->clear();
 }
 
+QString normalizedOptionalText(QString value, qsizetype maxLength) {
+  if (value.isNull()) value = QStringLiteral("");
+  return value.trimmed().left(maxLength);
+}
+
 }  // namespace
 
 MemoryStore::MemoryStore(QString databasePath)
@@ -154,9 +159,7 @@ bool MemoryStore::rememberLocation(const QString& alias, const QString& path, co
   const QString normalized = normalizeExistingPath(path, error);
   if (normalized.isEmpty()) return false;
   const QString kind = QFileInfo(normalized).isDir() ? QStringLiteral("directory") : QStringLiteral("file");
-  QString cleanNote = note;
-  if (cleanNote.isNull()) cleanNote = QStringLiteral("");
-  cleanNote = cleanNote.trimmed().left(1000);
+  const QString cleanNote = normalizedOptionalText(note, 1000);
 
   QSqlQuery query(database_);
   query.prepare(QStringLiteral(
@@ -291,12 +294,13 @@ bool MemoryStore::addSearchRoot(const QString& path, const QString& label, bool 
     if (error) *error = QStringLiteral("Search roots must be directories.");
     return false;
   }
+  const QString cleanLabel = normalizedOptionalText(label, 120);
 
   QSqlQuery query(database_);
   query.prepare(QStringLiteral(
       "INSERT INTO search_roots(label,path,recursive) VALUES(:label,:path,:recursive) "
       "ON CONFLICT(path) DO UPDATE SET label=excluded.label,recursive=excluded.recursive"));
-  query.bindValue(QStringLiteral(":label"), label.trimmed().left(120));
+  query.bindValue(QStringLiteral(":label"), cleanLabel);
   query.bindValue(QStringLiteral(":path"), normalized);
   query.bindValue(QStringLiteral(":recursive"), recursive ? 1 : 0);
   if (!query.exec()) {
