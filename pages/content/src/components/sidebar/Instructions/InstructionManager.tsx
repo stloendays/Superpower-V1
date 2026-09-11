@@ -306,7 +306,8 @@ const InstructionManager: React.FC<InstructionManagerProps> = ({ tools }) => {
                 className="mt-1.5 w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
               />
               <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
-                Leave empty for automatic selection. This setting changes local routing only and is not sent as an extra AI request.
+                Leave empty for automatic selection. This setting changes local routing only and is not sent as an extra
+                AI request.
               </div>
             </div>
           )}
