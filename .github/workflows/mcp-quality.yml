@@ -14,6 +14,17 @@ on:
 jobs:
   quality:
     runs-on: ubuntu-latest
+    env:
+      MCP_FILES: >-
+        pages/content/src/core/context-budget.ts
+        pages/content/src/core/tool-router.ts
+        pages/content/src/core/execution-policy.ts
+        pages/content/src/core/mcp-telemetry.ts
+        pages/content/src/core/mcp-client.ts
+        pages/content/src/core/index.ts
+        pages/content/src/stores/tool.store.ts
+        pages/content/src/components/sidebar/Instructions/instructionGeneratorJson.ts
+        pages/content/src/components/sidebar/Instructions/InstructionManager.tsx
     steps:
       - uses: actions/checkout@v4
         with:
@@ -68,15 +79,25 @@ jobs:
             echo 'Content-script TypeScript check is clean.'
           fi
 
-      - name: Check MCP formatting
-        run: >-
-          pnpm exec prettier --check
-          pages/content/src/core/context-budget.ts
-          pages/content/src/core/tool-router.ts
-          pages/content/src/core/execution-policy.ts
-          pages/content/src/core/mcp-telemetry.ts
-          pages/content/src/core/mcp-client.ts
-          pages/content/src/core/index.ts
-          pages/content/src/stores/tool.store.ts
-          pages/content/src/components/sidebar/Instructions/instructionGeneratorJson.ts
-          pages/content/src/components/sidebar/Instructions/InstructionManager.tsx
+      - name: Generate canonical MCP formatting
+        run: pnpm exec prettier --write $MCP_FILES
+
+      - name: Upload canonical MCP files
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-prettier-output
+          retention-days: 1
+          if-no-files-found: error
+          path: |
+            pages/content/src/core/context-budget.ts
+            pages/content/src/core/tool-router.ts
+            pages/content/src/core/execution-policy.ts
+            pages/content/src/core/mcp-telemetry.ts
+            pages/content/src/core/mcp-client.ts
+            pages/content/src/core/index.ts
+            pages/content/src/stores/tool.store.ts
+            pages/content/src/components/sidebar/Instructions/instructionGeneratorJson.ts
+            pages/content/src/components/sidebar/Instructions/InstructionManager.tsx
+
+      - name: Verify MCP formatting is committed
+        run: git diff --exit-code -- $MCP_FILES
