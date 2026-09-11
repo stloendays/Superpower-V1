@@ -28,6 +28,8 @@ jobs:
         run: pnpm exec prettier --write pages/content/src/components/sidebar/Instructions/InstructionManager.tsx
       - name: Commit formatting if changed
         shell: bash
+        env:
+          HUSKY: '0'
         run: |
           set -euo pipefail
           if git diff --quiet -- pages/content/src/components/sidebar/Instructions/InstructionManager.tsx; then
