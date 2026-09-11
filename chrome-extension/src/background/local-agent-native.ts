@@ -12,6 +12,7 @@ const ALLOWED_ACTIONS = new Set([
   'memory.list_roots',
   'file.search',
   'file.open',
+  'gui.notify',
 ]);
 
 const APPROVAL_REQUIRED_ACTIONS = new Set(['memory.remember', 'memory.add_root', 'file.open']);
@@ -45,6 +46,11 @@ const validateRequest = (message: LocalAgentBridgeMessage): string | null => {
     if (action === 'file.open') return 'Opening a local file requires explicit user approval.';
     if (action === 'memory.remember') return 'Remembering a local path requires explicit user approval.';
     return 'Adding a local search root requires explicit user approval.';
+  }
+
+  if (action === 'gui.notify') {
+    const text = message.payload?.args?.text;
+    if (typeof text !== 'string' || !text.trim()) return 'GUI notification text is required.';
   }
   return null;
 };
