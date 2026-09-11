@@ -55,12 +55,7 @@ const friendlyConnectionError = (error: string): string => {
 };
 
 const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) => {
-  const {
-    status: connectionStatus,
-    isConnected,
-    isReconnecting,
-    error: connectionError,
-  } = useConnectionStatus();
+  const { status: connectionStatus, isConnected, isReconnecting, error: connectionError } = useConnectionStatus();
   const { config: serverConfig, setConfig: setServerConfig } = useServerConfig();
   const {
     availableTools,
@@ -105,11 +100,7 @@ const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) =>
 
   const resolvedAutomaticType = useMemo(() => {
     const normalizedUri = serverUri.trim();
-    if (
-      normalizedUri &&
-      normalizedUri === serverConfig.uri?.trim() &&
-      serverConfig.connectionType
-    ) {
+    if (normalizedUri && normalizedUri === serverConfig.uri?.trim() && serverConfig.connectionType) {
       return serverConfig.connectionType;
     }
     return inferConnectionType(normalizedUri);
@@ -249,9 +240,7 @@ const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) =>
                 </div>
               )}
             </div>
-            <p className="mt-0.5 text-xs leading-5 text-slate-500 dark:text-slate-400">
-              {statusPresentation.message}
-            </p>
+            <p className="mt-0.5 text-xs leading-5 text-slate-500 dark:text-slate-400">{statusPresentation.message}</p>
           </div>
         </div>
 
@@ -264,7 +253,9 @@ const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) =>
 
         {shouldShowSetup && (
           <div className="mt-3 border-t border-slate-200 pt-3 dark:border-slate-700">
-            <label htmlFor="mcp-server-address" className="block text-xs font-medium text-slate-700 dark:text-slate-300">
+            <label
+              htmlFor="mcp-server-address"
+              className="block text-xs font-medium text-slate-700 dark:text-slate-300">
               MCP server address
             </label>
             <div className="mt-1.5 flex gap-2">
@@ -344,7 +335,8 @@ const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) =>
                   )}
 
                   <div className="rounded-md border border-slate-200 bg-white p-2 text-[10px] leading-4 text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
-                    Browser connections require an MCP endpoint reachable from this page. If a local server only exposes stdio, use a browser-accessible MCP proxy or gateway first.
+                    Browser connections require an MCP endpoint reachable from this page. If a local server only exposes
+                    stdio, use a browser-accessible MCP proxy or gateway first.
                   </div>
 
                   {technicalError && (
