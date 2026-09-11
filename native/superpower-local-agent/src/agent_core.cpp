@@ -18,6 +18,10 @@ QString requiredString(const QJsonObject& args, const QString& key) {
   return args.value(key).toString().trimmed();
 }
 
+bool isApproved(const QJsonObject& args) {
+  return args.value(QStringLiteral("approved")).toBool(false);
+}
+
 bool openWithSystem(const QString& path) {
 #ifdef Q_OS_WIN
   return QProcess::startDetached(QStringLiteral("explorer.exe"), {QDir::toNativeSeparators(path)});
@@ -120,11 +124,17 @@ QJsonObject AgentCore::handleCapabilities(const QJsonObject& request) const {
   return success(request, QJsonObject{{QStringLiteral("actions"), actions},
                                       {QStringLiteral("filesystem_write"), false},
                                       {QStringLiteral("file_open_requires_approval"), true},
+                                      {QStringLiteral("scope_changes_require_approval"), true},
                                       {QStringLiteral("search_scope"), QStringLiteral("remembered locations + approved roots")}});
 }
 
 QJsonObject AgentCore::handleRemember(const QJsonObject& request) {
   const QJsonObject args = requestArgs(request);
+  if (!isApproved(args)) {
+    return failure(request, QStringLiteral("confirmation_required"),
+                   QStringLiteral("Remembering a local path requires explicit user approval."), true);
+  }
+
   const QString alias = requiredString(args, QStringLiteral("alias"));
   const QString path = requiredString(args, QStringLiteral("path"));
   const QString note = args.value(QStringLiteral("note")).toString();
@@ -186,6 +196,11 @@ QJsonObject AgentCore::handleList(const QJsonObject& request) const {
 
 QJsonObject AgentCore::handleAddRoot(const QJsonObject& request) {
   const QJsonObject args = requestArgs(request);
+  if (!isApproved(args)) {
+    return failure(request, QStringLiteral("confirmation_required"),
+                   QStringLiteral("Adding a local search root requires explicit user approval."), true);
+  }
+
   const QString path = requiredString(args, QStringLiteral("path"));
   const QString label = args.value(QStringLiteral("label")).toString();
   const bool recursive =
@@ -237,7 +252,7 @@ QJsonObject AgentCore::handleOpen(const QJsonObject& request) {
   if (query.isEmpty()) {
     return failure(request, QStringLiteral("invalid_args"), QStringLiteral("file.open requires query."));
   }
-  if (!args.value(QStringLiteral("approved")).toBool(false)) {
+  if (!isApproved(args)) {
     return failure(request, QStringLiteral("confirmation_required"),
                    QStringLiteral("Opening a local file or directory requires explicit user approval."), true);
   }
