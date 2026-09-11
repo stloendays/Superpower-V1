@@ -14,6 +14,8 @@ const ALLOWED_ACTIONS = new Set([
   'file.open',
 ]);
 
+const APPROVAL_REQUIRED_ACTIONS = new Set(['memory.remember', 'memory.add_root', 'file.open']);
+
 interface LocalAgentBridgeMessage {
   type: typeof LOCAL_AGENT_MESSAGE_TYPE;
   payload?: {
@@ -39,8 +41,10 @@ const validateRequest = (message: LocalAgentBridgeMessage): string | null => {
   if (!action || typeof action !== 'string') return 'Local Agent action is required.';
   if (!ALLOWED_ACTIONS.has(action)) return `Local Agent action is not allowed: ${action}`;
 
-  if (action === 'file.open' && message.payload?.args?.approved !== true) {
-    return 'Opening a local file requires explicit user approval.';
+  if (APPROVAL_REQUIRED_ACTIONS.has(action) && message.payload?.args?.approved !== true) {
+    if (action === 'file.open') return 'Opening a local file requires explicit user approval.';
+    if (action === 'memory.remember') return 'Remembering a local path requires explicit user approval.';
+    return 'Adding a local search root requires explicit user approval.';
   }
   return null;
 };
