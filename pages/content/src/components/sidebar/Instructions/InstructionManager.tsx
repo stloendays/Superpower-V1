@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { generateInstructionsJson } from './instructionGeneratorJson';
+import { generateInstructionsJsonDetailed } from './instructionGeneratorJson';
 import { useToolEnablement, useUserPreferences } from '../../../hooks';
 import { Typography } from '../ui';
 import { cn } from '@src/lib/utils';
@@ -85,6 +85,7 @@ const InstructionManager: React.FC<InstructionManagerProps> = ({ tools }) => {
 
   const [instructions, setInstructions] = useState('');
   const [isEditing, setIsEditing] = useState(false);
+  const [routingQuery, setRoutingQuery] = useState('');
   const [customInstructions, setCustomInstructions] = useState(preferences.customInstructions || '');
   const [customInstructionsEnabled, setCustomInstructionsEnabled] = useState(
     preferences.customInstructionsEnabled || false,
@@ -114,21 +115,30 @@ const InstructionManager: React.FC<InstructionManagerProps> = ({ tools }) => {
     [tools, toolsSignature, enabledToolsSet, isToolEnabled],
   );
 
-  const generatedInstructions = useMemo(
-    () => generateInstructionsJson(enabledTools, customInstructions, customInstructionsEnabled),
-    [enabledTools, customInstructions, customInstructionsEnabled],
+  const generation = useMemo(
+    () =>
+      generateInstructionsJsonDetailed(enabledTools, customInstructions, customInstructionsEnabled, {
+        routingQuery,
+        maxTools: routingQuery.trim() ? 12 : 24,
+        maxInstructionChars: 24_000,
+      }),
+    [enabledTools, customInstructions, customInstructionsEnabled, routingQuery],
   );
 
+  const generatedInstructions = generation.instructions;
+
   /**
-   * Instruction state is now event/dependency driven. This replaces the old 500 ms
-   * setInterval regeneration loop, eliminating continuous CPU and string churn.
+   * Instruction state is event/dependency driven. Task-focus changes therefore
+   * regenerate once rather than continuously polling the tool list.
    */
   useEffect(() => {
     if (isEditing) return;
     setInstructions(current => (current === generatedInstructions ? current : generatedInstructions));
     instructionsState.setInstructions(generatedInstructions);
-    logMessage(`[InstructionManager] Synced ${enabledTools.length}/${tools.length} enabled tools`);
-  }, [generatedInstructions, enabledTools.length, tools.length, isEditing]);
+    logMessage(
+      `[InstructionManager] Injected ${generation.stats.selectedTools}/${enabledTools.length} enabled tools (~${generation.stats.estimatedTokens} tokens)`,
+    );
+  }, [generatedInstructions, generation.stats.selectedTools, generation.stats.estimatedTokens, enabledTools.length, isEditing]);
 
   useEffect(
     () =>
@@ -175,6 +185,8 @@ const InstructionManager: React.FC<InstructionManagerProps> = ({ tools }) => {
     setCustomInstructions(preferences.customInstructions || '');
     setIsEditingCustom(false);
   }, [preferences.customInstructions]);
+
+  const budgetPercent = Math.round(Math.min(1, generation.stats.budgetUtilization) * 100);
 
   return (
     <div className="space-y-3">
@@ -242,7 +254,7 @@ const InstructionManager: React.FC<InstructionManagerProps> = ({ tools }) => {
               Instructions
             </Typography>
             <div className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-              {enabledTools.length}/{tools.length} tools · {instructions.length.toLocaleString()} chars
+              {generation.stats.selectedTools}/{enabledTools.length} tools injected · ~{generation.stats.estimatedTokens.toLocaleString()} tokens · {budgetPercent}% budget
             </div>
           </div>
           <div className="flex items-center gap-1.5">
@@ -254,6 +266,25 @@ const InstructionManager: React.FC<InstructionManagerProps> = ({ tools }) => {
             ) : (
               <ActionButton onClick={() => setIsEditing(true)} color="blue" label="Edit" />
             )}
+          </div>
+        </div>
+
+        <div className="border-b border-slate-200 bg-slate-50/60 p-3 dark:border-slate-700 dark:bg-slate-800/40">
+          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300" htmlFor="mcp-task-focus">
+            Task focus <span className="font-normal text-slate-400">(optional)</span>
+          </label>
+          <input
+            id="mcp-task-focus"
+            type="text"
+            value={routingQuery}
+            onChange={event => setRoutingQuery(event.target.value)}
+            placeholder="e.g. find and summarize GitHub issues"
+            className="mt-1.5 w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
+          />
+          <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
+            {routingQuery.trim()
+              ? `Local router selected ${generation.stats.selectedTools} relevant tools; ${generation.stats.omittedByRouter + generation.stats.omittedByBudget} omitted.`
+              : 'Leave empty to preserve MCP server order. Context budget still prevents unbounded prompt growth.'}
           </div>
         </div>
 
