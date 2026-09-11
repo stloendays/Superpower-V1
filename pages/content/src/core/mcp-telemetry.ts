@@ -26,7 +26,7 @@ export interface McpTelemetrySummary {
   callsByTool: Record<string, number>;
 }
 
-interface PendingCall {
+export interface McpTelemetryPendingCall {
   id: string;
   toolName: string;
   adapterName: string;
@@ -62,7 +62,7 @@ class McpTelemetry {
     adapterName: string,
     risk: ToolRisk,
     args: Record<string, unknown>,
-  ): PendingCall {
+  ): McpTelemetryPendingCall {
     return {
       id: `mcp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       toolName,
@@ -73,20 +73,20 @@ class McpTelemetry {
     };
   }
 
-  success(call: PendingCall, result: unknown): McpTelemetryRecord {
+  success(call: McpTelemetryPendingCall, result: unknown): McpTelemetryRecord {
     return this.complete(call, 'success', {
       resultChars: getSerializedLength(result),
     });
   }
 
-  error(call: PendingCall, error: unknown): McpTelemetryRecord {
+  error(call: McpTelemetryPendingCall, error: unknown): McpTelemetryRecord {
     return this.complete(call, 'error', {
       errorKind: getErrorKind(error),
     });
   }
 
   private complete(
-    call: PendingCall,
+    call: McpTelemetryPendingCall,
     status: McpTelemetryStatus,
     extra: Pick<McpTelemetryRecord, 'resultChars' | 'errorKind'>,
   ): McpTelemetryRecord {
@@ -116,7 +116,8 @@ class McpTelemetry {
     const successes = this.records.filter(record => record.status === 'success').length;
     const errors = calls - successes;
     const durations = this.records.map(record => record.durationMs).sort((a, b) => a - b);
-    const p95Index = durations.length > 0 ? Math.min(durations.length - 1, Math.ceil(durations.length * 0.95) - 1) : 0;
+    const p95Index =
+      durations.length > 0 ? Math.min(durations.length - 1, Math.ceil(durations.length * 0.95) - 1) : 0;
     const callsByRisk: Record<ToolRisk, number> = { low: 0, medium: 0, high: 0, critical: 0 };
     const callsByTool: Record<string, number> = {};
 
