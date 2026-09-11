@@ -1,0 +1,41 @@
+name: MCP Browser UX Formatter
+
+on:
+  pull_request:
+    paths:
+      - 'pages/content/src/components/sidebar/Instructions/InstructionManager.tsx'
+      - '.github/workflows/format-mcp-browser-ux.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'feature/mcp-v1-2-optimization'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+      - run: pnpm install --frozen-lockfile --prefer-offline
+      - name: Apply canonical formatting
+        run: pnpm exec prettier --write pages/content/src/components/sidebar/Instructions/InstructionManager.tsx
+      - name: Commit formatting if changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- pages/content/src/components/sidebar/Instructions/InstructionManager.tsx; then
+            echo 'Formatting already canonical.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add pages/content/src/components/sidebar/Instructions/InstructionManager.tsx
+          git commit -m 'style(ux): format automatic routing UI'
+          git push origin "HEAD:${GITHUB_HEAD_REF}"
