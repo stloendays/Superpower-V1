@@ -6,6 +6,14 @@ import { useConnectionStatus, useServerConfig } from '../../../hooks';
 import { Typography, Icon, Button } from '../ui';
 import { cn } from '@src/lib/utils';
 import { Card, CardContent } from '@src/components/ui/card';
+import {
+  inferConnectionType,
+  loadRecentConnections,
+  parseMcpConnectionInput,
+  rememberRecentConnection,
+  type ParsedConnectionInput,
+  type RecentConnection,
+} from './connection-input';
 
 interface ServerStatusProps {
   status: string;
@@ -15,22 +23,6 @@ const TRANSPORT_LABELS: Record<ConnectionType, string> = {
   'streamable-http': 'Streamable HTTP',
   sse: 'Server-Sent Events (SSE)',
   websocket: 'WebSocket',
-};
-
-const inferConnectionType = (uri: string): ConnectionType => {
-  const normalized = uri.trim().toLowerCase();
-
-  if (normalized.startsWith('ws://') || normalized.startsWith('wss://')) return 'websocket';
-
-  try {
-    const url = new URL(uri.trim());
-    if (url.protocol === 'ws:' || url.protocol === 'wss:') return 'websocket';
-    if (/\/sse\/?$/i.test(url.pathname)) return 'sse';
-  } catch {
-    if (/\/sse\/?(?:[?#].*)?$/i.test(normalized)) return 'sse';
-  }
-
-  return 'streamable-http';
 };
 
 const friendlyConnectionError = (error: string): string => {
@@ -52,6 +44,16 @@ const friendlyConnectionError = (error: string): string => {
     return 'Superpower could not reach that server. Check the address, network access, and CORS settings.';
   }
   return 'Superpower could not connect to this server. Check the address or open Advanced for technical details.';
+};
+
+const recentConnectionLabel = (connection: RecentConnection): string => {
+  try {
+    const url = new URL(connection.uri);
+    const path = url.pathname === '/' ? '' : url.pathname;
+    return `${connection.label ? `${connection.label} · ` : ''}${url.host}${path}`;
+  } catch {
+    return connection.label || connection.uri;
+  }
 };
 
 const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) => {
@@ -76,6 +78,9 @@ const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) =>
   const [isEditingUri, setIsEditingUri] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [localError, setLocalError] = useState('');
+  const [recognizedLabel, setRecognizedLabel] = useState('');
+  const [authNotImported, setAuthNotImported] = useState(false);
+  const [recentConnections, setRecentConnections] = useState<RecentConnection[]>([]);
 
   const status = connectionStatus || initialStatus || 'disconnected';
   const busy = isConnecting || isReconnecting || status === 'connecting' || status === 'reconnecting';
@@ -92,65 +97,122 @@ const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) =>
   }, [serverConfig.uri, serverConfig.connectionType, isEditingUri, manualTransport, serverUri]);
 
   useEffect(() => {
+    loadRecentConnections().then(setRecentConnections).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
     if (!isInitialized) return;
 
     getServerConfig().catch(() => undefined);
     forceConnectionStatusCheck().catch(() => undefined);
   }, [isInitialized, getServerConfig, forceConnectionStatusCheck]);
 
+  const parsedPreview = useMemo(() => parseMcpConnectionInput(serverUri), [serverUri]);
+
   const resolvedAutomaticType = useMemo(() => {
-    const normalizedUri = serverUri.trim();
-    if (normalizedUri && normalizedUri === serverConfig.uri?.trim() && serverConfig.connectionType) {
+    const previewUri = parsedPreview.ok ? parsedPreview.value.uri : serverUri.trim();
+    if (previewUri && previewUri === serverConfig.uri?.trim() && serverConfig.connectionType) {
       return serverConfig.connectionType;
     }
-    return inferConnectionType(normalizedUri);
-  }, [serverUri, serverConfig.uri, serverConfig.connectionType]);
+    if (parsedPreview.ok) return parsedPreview.value.connectionType;
+    return inferConnectionType(previewUri);
+  }, [parsedPreview, serverUri, serverConfig.uri, serverConfig.connectionType]);
 
   const effectiveConnectionType = manualTransport ? connectionType : resolvedAutomaticType;
 
+  const connectResolved = useCallback(
+    async (connection: Pick<ParsedConnectionInput, 'uri' | 'connectionType' | 'label'>) => {
+      if (!isInitialized) {
+        setLocalError('Superpower is still starting. Try again in a moment.');
+        return;
+      }
+
+      setIsConnecting(true);
+      setLocalError('');
+
+      try {
+        setServerConfig({ uri: connection.uri, connectionType: connection.connectionType });
+        const updated = await updateServerConfig({
+          uri: connection.uri,
+          connectionType: connection.connectionType,
+        });
+        if (!updated) throw new Error('Server configuration was not accepted.');
+
+        const connected = await forceReconnect();
+        if (!connected) throw new Error('Connection attempt failed.');
+
+        setServerUri(connection.uri);
+        setConnectionType(connection.connectionType);
+        setIsEditingUri(false);
+        setShowSetup(false);
+        setRecognizedLabel('');
+        setAuthNotImported(false);
+        const nextRecent = await rememberRecentConnection({
+          uri: connection.uri,
+          connectionType: connection.connectionType,
+          label: connection.label,
+        });
+        setRecentConnections(nextRecent);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setLocalError(friendlyConnectionError(message) || 'Connection failed.');
+        setShowSetup(true);
+      } finally {
+        setIsConnecting(false);
+      }
+    },
+    [isInitialized, setServerConfig, updateServerConfig, forceReconnect],
+  );
+
   const connect = useCallback(async () => {
-    const uri = serverUri.trim();
-    if (!uri) {
-      setLocalError('Paste an MCP server address first.');
-      return;
-    }
-    if (!isInitialized) {
-      setLocalError('Superpower is still starting. Try again in a moment.');
+    const parsed = parseMcpConnectionInput(serverUri);
+    if (!parsed.ok) {
+      setLocalError(parsed.error);
       return;
     }
 
-    const selectedType = manualTransport ? connectionType : resolvedAutomaticType;
-    setIsConnecting(true);
-    setLocalError('');
-
-    try {
-      setServerConfig({ uri, connectionType: selectedType });
-      const updated = await updateServerConfig({ uri, connectionType: selectedType });
-      if (!updated) throw new Error('Server configuration was not accepted.');
-
-      const connected = await forceReconnect();
-      if (!connected) throw new Error('Connection attempt failed.');
-
-      setConnectionType(selectedType);
-      setIsEditingUri(false);
-      setShowSetup(false);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setLocalError(friendlyConnectionError(message) || 'Connection failed.');
-      setShowSetup(true);
-    } finally {
-      setIsConnecting(false);
+    if (parsed.value.ignoredAuth || authNotImported) {
+      setLocalError(
+        'This configuration contains authentication fields. Superpower recognized the endpoint but did not import secrets. Authenticated config import will be handled separately for safety.',
+      );
+      return;
     }
+
+    const sameAsSaved = parsed.value.uri === serverConfig.uri?.trim();
+    const selectedType = manualTransport
+      ? connectionType
+      : sameAsSaved && serverConfig.connectionType
+        ? serverConfig.connectionType
+        : parsed.value.connectionType;
+
+    await connectResolved({
+      uri: parsed.value.uri,
+      connectionType: selectedType,
+      label: parsed.value.label || recognizedLabel || undefined,
+    });
   }, [
     serverUri,
-    isInitialized,
+    authNotImported,
+    serverConfig.uri,
+    serverConfig.connectionType,
     manualTransport,
     connectionType,
-    resolvedAutomaticType,
-    setServerConfig,
-    updateServerConfig,
-    forceReconnect,
+    connectResolved,
+    recognizedLabel,
   ]);
+
+  const connectToRecent = useCallback(
+    async (connection: RecentConnection) => {
+      setServerUri(connection.uri);
+      setConnectionType(connection.connectionType);
+      setManualTransport(false);
+      setIsEditingUri(false);
+      setAuthNotImported(false);
+      setRecognizedLabel(connection.label || '');
+      await connectResolved(connection);
+    },
+    [connectResolved],
+  );
 
   const reconnect = useCallback(async () => {
     if (!isInitialized || busy) return;
@@ -167,6 +229,29 @@ const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) =>
       setIsConnecting(false);
     }
   }, [isInitialized, busy, forceReconnect]);
+
+  const handlePaste = useCallback((event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const pasted = event.clipboardData.getData('text').trim();
+    if (!pasted) return;
+
+    const parsed = parseMcpConnectionInput(pasted);
+    if (!parsed.ok) {
+      if (pasted.startsWith('{')) {
+        event.preventDefault();
+        setLocalError(parsed.error);
+      }
+      return;
+    }
+
+    event.preventDefault();
+    setServerUri(parsed.value.uri);
+    setConnectionType(parsed.value.connectionType);
+    setManualTransport(false);
+    setIsEditingUri(true);
+    setLocalError('');
+    setRecognizedLabel(parsed.value.label || (parsed.value.source === 'json' ? 'MCP configuration' : ''));
+    setAuthNotImported(parsed.value.ignoredAuth);
+  }, []);
 
   const statusPresentation = useMemo(() => {
     if (busy) {
@@ -194,7 +279,7 @@ const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) =>
 
     return {
       title: 'Connect MCP',
-      message: 'Paste your MCP server address. Superpower will handle the connection method for you.',
+      message: 'Paste an MCP server address or configuration. Superpower will recognize it for you.',
       icon: 'server' as const,
       iconClass: 'text-slate-600 dark:text-slate-300',
       iconBackground: 'bg-slate-100 dark:bg-slate-800',
@@ -203,6 +288,7 @@ const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) =>
 
   const technicalError = localError || connectionError || '';
   const visibleError = localError || friendlyConnectionError(connectionError || '');
+  const jsonPreview = parsedPreview.ok && parsedPreview.value.source === 'json' ? parsedPreview.value : null;
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
@@ -256,25 +342,31 @@ const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) =>
             <label
               htmlFor="mcp-server-address"
               className="block text-xs font-medium text-slate-700 dark:text-slate-300">
-              MCP server address
+              MCP server or config
             </label>
-            <div className="mt-1.5 flex gap-2">
-              <input
+            <div className="mt-1.5 flex items-start gap-2">
+              <textarea
                 id="mcp-server-address"
-                type="text"
+                rows={serverUri.trim().startsWith('{') ? 4 : 1}
                 value={serverUri}
                 onChange={event => {
                   setServerUri(event.target.value);
                   setIsEditingUri(true);
                   setLocalError('');
+                  setRecognizedLabel('');
+                  setAuthNotImported(false);
                 }}
+                onPaste={handlePaste}
                 onKeyDown={event => {
-                  if (event.key === 'Enter') void connect();
+                  if (event.key === 'Enter' && !event.shiftKey && !serverUri.trim().startsWith('{')) {
+                    event.preventDefault();
+                    void connect();
+                  }
                 }}
                 spellCheck={false}
                 autoComplete="off"
-                placeholder="https://example.com/mcp"
-                className="min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-2.5 py-2 text-xs text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                placeholder="https://example.com/mcp or paste MCP JSON"
+                className="min-h-8 min-w-0 flex-1 resize-y rounded-md border border-slate-300 bg-white px-2.5 py-2 text-xs text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
               />
               <Button
                 onClick={connect}
@@ -286,9 +378,50 @@ const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) =>
               </Button>
             </div>
 
-            <div className="mt-1.5 flex items-center justify-between gap-3">
+            {(recognizedLabel || jsonPreview) && !authNotImported && (
+              <div className="mt-2 flex items-center gap-1.5 rounded-md bg-emerald-50 px-2 py-1.5 text-[10px] text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">
+                <Icon name="check" size="xs" />
+                <span>
+                  Recognized {recognizedLabel || jsonPreview?.label || 'MCP configuration'} ·{' '}
+                  {TRANSPORT_LABELS[effectiveConnectionType]}
+                </span>
+              </div>
+            )}
+
+            {authNotImported && (
+              <div className="mt-2 rounded-md bg-amber-50 px-2 py-1.5 text-[10px] leading-4 text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+                Endpoint recognized, but authentication fields were not imported or stored. Secret-aware config import will be a separate guarded flow.
+              </div>
+            )}
+
+            {recentConnections.length > 0 && (
+              <div className="mt-3">
+                <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                  Recent
+                </div>
+                <div className="space-y-1">
+                  {recentConnections.slice(0, 3).map(connection => (
+                    <button
+                      key={`${connection.connectionType}:${connection.uri}`}
+                      type="button"
+                      disabled={busy || !isInitialized}
+                      onClick={() => void connectToRecent(connection)}
+                      className="flex w-full items-center justify-between gap-2 rounded-md border border-slate-200 px-2 py-1.5 text-left hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800">
+                      <span className="min-w-0 truncate text-[10px] text-slate-600 dark:text-slate-300">
+                        {recentConnectionLabel(connection)}
+                      </span>
+                      <span className="shrink-0 text-[9px] font-medium text-slate-400 dark:text-slate-500">
+                        Connect
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-2 flex items-center justify-between gap-3">
               <p className="text-[10px] leading-4 text-slate-500 dark:text-slate-400">
-                Superpower automatically chooses the connection method. Press Enter to connect.
+                Paste a URL or common MCP JSON config. Successful safe endpoints appear under Recent.
               </p>
               <button
                 type="button"
@@ -335,8 +468,7 @@ const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) =>
                   )}
 
                   <div className="rounded-md border border-slate-200 bg-white p-2 text-[10px] leading-4 text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
-                    Browser connections require an MCP endpoint reachable from this page. If a local server only exposes
-                    stdio, use a browser-accessible MCP proxy or gateway first.
+                    Browser connections require an MCP endpoint reachable from this page. Local stdio configs are recognized, but they must run through Superpower Host or a browser-accessible MCP proxy.
                   </div>
 
                   {technicalError && (
@@ -351,7 +483,7 @@ const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) =>
               </Card>
             )}
 
-            {!manualTransport && serverUri.trim() && (
+            {!manualTransport && serverUri.trim() && parsedPreview.ok && (
               <div className="mt-2 text-[10px] text-slate-400 dark:text-slate-500">
                 Connection method: {TRANSPORT_LABELS[effectiveConnectionType]} · automatic
               </div>
