@@ -66,7 +66,7 @@ const splitTerms = (value: string): string[] =>
     .map(term => term.trim())
     .filter(term => term.length >= 2);
 
-const unique = <T,>(values: T[]): T[] => Array.from(new Set(values));
+const unique = <T>(values: T[]): T[] => Array.from(new Set(values));
 
 const getSchemaSearchText = (schema?: string): string => {
   if (!schema) return '';
