@@ -45,6 +45,11 @@ else()
 endif()
 target_link_libraries(superpower-local-gui PRIVATE superpower_local_core Qt6::Widgets Qt6::Network)
 
+enable_testing()
+add_executable(superpower-local-agent-smoke tests/core_smoke.cpp)
+target_link_libraries(superpower-local-agent-smoke PRIVATE superpower_local_core Qt6::Core)
+add_test(NAME local-agent-core-smoke COMMAND superpower-local-agent-smoke)
+
 install(TARGETS superpower-local-agent superpower-local-gui
   RUNTIME DESTINATION bin
 )
