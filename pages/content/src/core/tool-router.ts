@@ -24,6 +24,40 @@ export interface ToolRouteResult<T extends RoutableTool> {
   queryUsed: boolean;
 }
 
+/**
+ * Lightweight intent aliases keep the zero-model router useful when the task focus
+ * is written in Chinese while the MCP catalog is described in English. This is not
+ * translation; it only expands common tool verbs/nouns into stable routing terms.
+ */
+const QUERY_ALIASES: ReadonlyArray<[RegExp, string[]]> = [
+  [/搜索|查找|检索|搜一下|找一下/, ['search', 'find', 'query']],
+  [/读取|查看|打开|获取|看看/, ['read', 'get', 'fetch', 'open']],
+  [/列出|列表|有哪些/, ['list', 'search']],
+  [/创建|新建|添加/, ['create', 'add']],
+  [/更新|修改|编辑|改一下/, ['update', 'edit', 'write']],
+  [/删除|移除|清理/, ['delete', 'remove']],
+  [/发送|发邮件|发消息/, ['send', 'email', 'message', 'mail']],
+  [/上传/, ['upload', 'file']],
+  [/下载|导出/, ['download', 'export', 'file']],
+  [/文件|文档/, ['file', 'document', 'doc']],
+  [/文件夹|目录/, ['folder', 'directory']],
+  [/仓库|代码库/, ['repo', 'repository', 'github']],
+  [/代码|源码/, ['code', 'source']],
+  [/问题|工单/, ['issue', 'issues']],
+  [/拉取请求|合并请求|PR/, ['pull', 'request', 'pr', 'merge']],
+  [/邮件|邮箱/, ['email', 'mail', 'gmail']],
+  [/表格|电子表格/, ['sheet', 'spreadsheet', 'table']],
+  [/日历|会议|日程/, ['calendar', 'event', 'meeting']],
+  [/数据库|数据/, ['database', 'data', 'query']],
+  [/分享|共享|链接/, ['share', 'shared', 'link']],
+  [/总结|摘要/, ['summary', 'summarize', 'read']],
+];
+
+const expandQueryAliases = (value: string): string => {
+  const aliases = QUERY_ALIASES.flatMap(([pattern, terms]) => (pattern.test(value) ? terms : []));
+  return aliases.length > 0 ? `${value} ${aliases.join(' ')}` : value;
+};
+
 const splitTerms = (value: string): string[] =>
   value
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
@@ -77,7 +111,7 @@ export const routeTools = <T extends RoutableTool>(
   const maxTools = Math.max(1, options.maxTools ?? 12);
   const minScore = options.minScore ?? 1;
   const normalizedQuery = query.trim().toLowerCase();
-  const queryTerms = unique(splitTerms(query));
+  const queryTerms = unique(splitTerms(expandQueryAliases(query)));
   const alwaysInclude = new Set((options.alwaysInclude ?? []).map(name => name.toLowerCase()));
 
   // With no task context, preserve server/user ordering rather than pretending a
