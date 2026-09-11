@@ -26,8 +26,8 @@ export interface ToolRouteResult<T extends RoutableTool> {
 
 const splitTerms = (value: string): string[] =>
   value
-    .toLowerCase()
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .toLowerCase()
     .split(/[^a-z0-9_]+/i)
     .map(term => term.trim())
     .filter(term => term.length >= 2);
@@ -77,7 +77,7 @@ export const routeTools = <T extends RoutableTool>(
   const maxTools = Math.max(1, options.maxTools ?? 12);
   const minScore = options.minScore ?? 1;
   const normalizedQuery = query.trim().toLowerCase();
-  const queryTerms = unique(splitTerms(normalizedQuery));
+  const queryTerms = unique(splitTerms(query));
   const alwaysInclude = new Set((options.alwaysInclude ?? []).map(name => name.toLowerCase()));
 
   // With no task context, preserve server/user ordering rather than pretending a
