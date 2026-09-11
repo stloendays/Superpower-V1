@@ -15,10 +15,7 @@ import {
   type ParsedConnectionInput,
   type RecentConnection,
 } from './connection-input';
-import {
-  diagnoseConnectionError,
-  type ConnectionDiagnosis,
-} from './connection-diagnosis';
+import { diagnoseConnectionError, type ConnectionDiagnosis } from './connection-diagnosis';
 
 interface ServerStatusProps {
   status: string;
@@ -176,11 +173,7 @@ const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) =>
       } catch (error) {
         const firstRawError =
           useConnectionStore.getState().error || (error instanceof Error ? error.message : String(error));
-        const firstDiagnosis = diagnoseConnectionError(
-          firstRawError,
-          connection.uri,
-          connection.connectionType,
-        );
+        const firstDiagnosis = diagnoseConnectionError(firstRawError, connection.uri, connection.connectionType);
 
         if (
           options.allowAutoRepair &&
@@ -199,9 +192,7 @@ const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) =>
           try {
             await persistAndReconnect(repairedConnection);
             await completeSuccessfulConnection(repairedConnection);
-            setRepairNotice(
-              `Connected automatically using ${TRANSPORT_LABELS[repairedConnection.connectionType]}.`,
-            );
+            setRepairNotice(`Connected automatically using ${TRANSPORT_LABELS[repairedConnection.connectionType]}.`);
             return;
           } catch (repairError) {
             const repairRawError =
@@ -359,13 +350,15 @@ const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) =>
   }, [busy, isConnected, toolCount, repairNotice]);
 
   const technicalError = rawConnectionError || connectionError || '';
-  const visibleError = localError || (connectionError
-    ? diagnoseConnectionError(
-        connectionError,
-        serverConfig.uri || serverUri,
-        serverConfig.connectionType || effectiveConnectionType,
-      ).message
-    : '');
+  const visibleError =
+    localError ||
+    (connectionError
+      ? diagnoseConnectionError(
+          connectionError,
+          serverConfig.uri || serverUri,
+          serverConfig.connectionType || effectiveConnectionType,
+        ).message
+      : '');
   const jsonPreview = parsedPreview.ok && parsedPreview.value.source === 'json' ? parsedPreview.value : null;
 
   return (
@@ -566,7 +559,9 @@ const ServerStatus: React.FC<ServerStatusProps> = ({ status: initialStatus }) =>
                   )}
 
                   <div className="rounded-md border border-slate-200 bg-white p-2 text-[10px] leading-4 text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
-                    Automatic repair may try one alternate HTTP transport only when the connection error clearly indicates a protocol mismatch. It never retries MCP tool calls. Local stdio configs must run through Superpower Host or a browser-accessible MCP proxy.
+                    Automatic repair may try one alternate HTTP transport only when the connection error clearly
+                    indicates a protocol mismatch. It never retries MCP tool calls. Local stdio configs must run through
+                    Superpower Host or a browser-accessible MCP proxy.
                   </div>
 
                   {technicalError && (

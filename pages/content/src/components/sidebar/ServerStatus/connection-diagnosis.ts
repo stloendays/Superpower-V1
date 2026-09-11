@@ -78,7 +78,9 @@ export const diagnoseConnectionError = (
     };
   }
 
-  if (/econnrefused|connection refused|enotfound|dns|network error|server unavailable|could not connect/.test(normalized)) {
+  if (
+    /econnrefused|connection refused|enotfound|dns|network error|server unavailable|could not connect/.test(normalized)
+  ) {
     return {
       kind: 'unreachable',
       message: 'Superpower cannot reach the MCP server.',
@@ -91,7 +93,8 @@ export const diagnoseConnectionError = (
     return {
       kind: 'timeout',
       message: 'The MCP server took too long to respond.',
-      action: 'Check server load and network reachability, then reconnect. Superpower will not cycle protocols on a timeout.',
+      action:
+        'Check server load and network reachability, then reconnect. Superpower will not cycle protocols on a timeout.',
       canAutoRepair: false,
     };
   }
