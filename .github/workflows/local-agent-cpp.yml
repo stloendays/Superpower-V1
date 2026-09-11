@@ -65,6 +65,7 @@ jobs:
         shell: pwsh
         run: |
           $env:PATH = "C:\Qt\6.8.3\msvc2022_64\bin;$env:PATH"
+          $env:QT_PLUGIN_PATH = 'C:\Qt\6.8.3\msvc2022_64\plugins'
           ctest --test-dir build/local-agent -C Release --output-on-failure
 
       - name: Deploy Qt runtime
