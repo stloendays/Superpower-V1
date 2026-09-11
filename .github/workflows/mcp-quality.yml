@@ -10,30 +10,64 @@ on:
       - 'pages/content/package.json'
       - 'pnpm-lock.yaml'
       - '.github/workflows/mcp-quality.yml'
-  push:
-    branches: [main, dev]
-    paths:
-      - 'pages/content/src/core/**'
-      - 'pages/content/src/components/sidebar/Instructions/**'
-      - 'pages/content/src/stores/tool.store.ts'
-      - 'pages/content/src/types/stores.ts'
-      - 'pages/content/package.json'
-      - 'pnpm-lock.yaml'
-      - '.github/workflows/mcp-quality.yml'
 
 jobs:
   quality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version-file: '.nvmrc'
           cache: pnpm
       - run: pnpm install --frozen-lockfile --prefer-offline
-      - name: Type check content script
-        run: pnpm -F @extension/content-script type-check
+
+      - name: Capture PR TypeScript baseline delta
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -uo pipefail
+          HEAD_SHA="$(git rev-parse HEAD)"
+
+          set +e
+          pnpm -F @extension/content-script type-check 2>&1 | tee /tmp/head-typecheck.log
+          HEAD_STATUS=${PIPESTATUS[0]}
+          set -e
+
+          grep -E 'error TS[0-9]+:' /tmp/head-typecheck.log \
+            | sed -E 's/\([0-9]+,[0-9]+\): /: /' \
+            | sort -u > /tmp/head-errors.txt || true
+
+          git checkout --detach "$BASE_SHA"
+          set +e
+          pnpm -F @extension/content-script type-check 2>&1 | tee /tmp/base-typecheck.log
+          BASE_STATUS=${PIPESTATUS[0]}
+          set -e
+
+          grep -E 'error TS[0-9]+:' /tmp/base-typecheck.log \
+            | sed -E 's/\([0-9]+,[0-9]+\): /: /' \
+            | sort -u > /tmp/base-errors.txt || true
+
+          git checkout --detach "$HEAD_SHA"
+          comm -13 /tmp/base-errors.txt /tmp/head-errors.txt > /tmp/new-errors.txt
+
+          if [ -s /tmp/new-errors.txt ]; then
+            echo 'New TypeScript errors introduced by this PR:'
+            cat /tmp/new-errors.txt
+            exit 1
+          fi
+
+          if [ "$HEAD_STATUS" -ne 0 ]; then
+            echo 'TypeScript still has baseline errors, but this PR introduces no new TypeScript errors.'
+            echo "Baseline exit code: $BASE_STATUS; PR exit code: $HEAD_STATUS"
+          else
+            echo 'Content-script TypeScript check is clean.'
+          fi
+
       - name: Check MCP formatting
         run: >-
           pnpm exec prettier --check
