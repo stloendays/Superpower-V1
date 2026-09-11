@@ -61,7 +61,8 @@ Tool-call protocol:
 - Do not print tool-call syntax in reasoning or examples unless actually requesting execution.
 `;
 
-const CSN_LEGEND = 'Schema notation: o=object, s=string, i=integer, n=number, b=boolean, a[]=array, e[]=enum, r=required, ?=optional.';
+const CSN_LEGEND =
+  'Schema notation: o=object, s=string, i=integer, n=number, b=boolean, a[]=array, e[]=enum, r=required, ?=optional.';
 
 const normalizeText = (value: string, maxLength = 280): string => truncateFreeText(value || '', maxLength);
 
@@ -184,9 +185,10 @@ export const generateInstructionsJsonDetailed = (
   }
 
   const omittedTotal = route.omitted + omittedByBudget;
-  const omissionNote = omittedTotal > 0
-    ? `\n\n[Context optimization: ${omittedTotal} tool${omittedTotal === 1 ? '' : 's'} omitted. Set a task focus or enable fewer tools to change the selection.]`
-    : '';
+  const omissionNote =
+    omittedTotal > 0
+      ? `\n\n[Context optimization: ${omittedTotal} tool${omittedTotal === 1 ? '' : 's'} omitted. Set a task focus or enable fewer tools to change the selection.]`
+      : '';
 
   const toolSection = `${toolHeader}\n\n${renderedTools.join('\n')}${omissionNote}`;
   const instructions = `${[...sections, toolSection, tail].filter(Boolean).join('\n\n')}\n`;
@@ -213,4 +215,5 @@ export const generateInstructionsJson = (
   customInstructions?: string,
   customInstructionsEnabled?: boolean,
   options: InstructionGenerationOptions = {},
-): string => generateInstructionsJsonDetailed(tools, customInstructions, customInstructionsEnabled, options).instructions;
+): string =>
+  generateInstructionsJsonDetailed(tools, customInstructions, customInstructionsEnabled, options).instructions;
