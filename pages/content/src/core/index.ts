@@ -29,12 +29,7 @@ export { routeTools } from './tool-router';
 export type { RankedTool, RoutableTool, ToolRouteResult, ToolRouterOptions } from './tool-router';
 
 export { evaluateToolExecution } from './execution-policy';
-export type {
-  ExecutionDecision,
-  ExecutionPolicyMode,
-  ExecutionPolicyResult,
-  ToolRisk,
-} from './execution-policy';
+export type { ExecutionDecision, ExecutionPolicyMode, ExecutionPolicyResult, ToolRisk } from './execution-policy';
 
 export { mcpTelemetry, McpTelemetry } from './mcp-telemetry';
 export type {
