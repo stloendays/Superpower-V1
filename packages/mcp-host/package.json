@@ -1,0 +1,29 @@
+{
+  "name": "@superpower/mcp-host",
+  "version": "1.3.0",
+  "description": "Browserless Superpower MCP gateway host and CLI",
+  "type": "module",
+  "private": true,
+  "sideEffects": false,
+  "bin": {
+    "superpower": "dist/cli.js"
+  },
+  "files": [
+    "dist/**"
+  ],
+  "scripts": {
+    "ready": "tsc -b",
+    "build": "tsc -b",
+    "start": "pnpm run build && node dist/cli.js",
+    "type-check": "tsc --noEmit",
+    "prettier": "prettier . --write --ignore-path ../../.prettierignore"
+  },
+  "dependencies": {
+    "@extension/shared": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.20.2"
+  },
+  "devDependencies": {
+    "@extension/tsconfig": "workspace:*",
+    "@types/node": "^22.5.5"
+  }
+}

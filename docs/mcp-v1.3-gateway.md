@@ -21,11 +21,15 @@ Superpower McpGateway
       v
 MCP Transport Adapter
       |
+      +-- Browser adapter
+      +-- SDK-like client adapter
+      +-- First-party Node/CLI host
+      |
       v
 MCP Server(s)
 ```
 
-Current browser mode can continue using its existing transport and UI. Native clients can use `McpSdkClientTransport` to wrap an official MCP SDK `Client` without any browser APIs.
+Current browser mode can continue using its existing transport and UI. Native clients can use `McpSdkClientTransport`, while users who do not want to write SDK setup code can use the first-party `@superpower/mcp-host` CLI.
 
 ## Adapter contract
 
@@ -47,45 +51,34 @@ The gateway provides:
 
 `McpSdkClientTransport` deliberately depends on an SDK-like interface rather than importing `@modelcontextprotocol/sdk`. This keeps Superpower Core independent of a concrete SDK version while remaining directly compatible with the official TypeScript SDK.
 
-Example with a local stdio MCP server:
+## First-party Node / CLI host
 
-```ts
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { createMcpGatewayFromSdkClient } from '@extension/shared';
+`packages/mcp-host` now owns concrete stdio and Streamable HTTP setup. This is the first browserless end-user path in the repository.
 
-const client = new Client({ name: 'superpower-native', version: '1.3.0' });
-await client.connect(
-  new StdioClientTransport({
-    command: 'node',
-    args: ['server.js'],
-  }),
-);
+Development examples:
 
-const gateway = createMcpGatewayFromSdkClient(client, {
-  taskFocus: 'find and summarize repository issues',
-  policyMode: 'guarded',
-  confirm: async ({ toolName, policy }) => {
-    console.log(`Confirm ${toolName}: ${policy.reasons.join(', ')}`);
-    return false;
-  },
-});
+```bash
+pnpm -F @superpower/mcp-host start -- connect --http http://localhost:3000/mcp --focus "find files"
 
-const routed = await gateway.listTools();
-console.log(routed.tools.map(tool => tool.name));
-
-await client.close();
+pnpm -F @superpower/mcp-host start -- connect --stdio node --server-arg server.js
 ```
 
-For Streamable HTTP, connect the SDK `Client` with its `StreamableHTTPClientTransport` and pass the same connected client to Superpower. No gateway code changes are required.
+The `connect` command opens a small interactive shell in a TTY with `tools`, `focus`, `policy`, `call`, and `stats` commands. `tools` and `call` also work as one-shot commands, and `--json` provides machine-readable output.
+
+High/critical actions fail closed in guarded non-interactive mode unless the caller explicitly supplies `--yes`. HTTP headers and child-process secrets can be mapped from environment variables with `--header-env` and `--server-env`; telemetry retains keys/timings only, not secret values or result bodies.
+
+## SDK version boundary
+
+The repository is deliberately staying on its existing v1 `@modelcontextprotocol/sdk` dependency during this refactor. The official TypeScript SDK now has a v2 split-package layout. Concrete SDK imports are isolated in `packages/mcp-host`, while the shared gateway uses only the SDK-like adapter contract. A later SDK v2 migration therefore changes the host boundary rather than the router/policy/telemetry implementation.
 
 ## Migration strategy
 
-1. Keep compatibility re-exports in `pages/content/src/core` so existing browser imports remain stable.
-2. Move orchestration work into the shared core.
-3. Provide the SDK-like native adapter for browserless clients.
-4. Add a first-party CLI/Node host that owns stdio and Streamable HTTP connection configuration.
+1. Keep compatibility re-exports in `pages/content/src/core` so existing browser imports remain stable. **Done.**
+2. Move orchestration work into the shared core. **Done.**
+3. Provide the SDK-like native adapter for browserless clients. **Done.**
+4. Add a first-party CLI/Node host that owns stdio and Streamable HTTP connection configuration. **Done.**
 5. Wire the existing browser bridge through the same `McpGateway` boundary.
-6. Once both hosts are stable, package the shared core as a separately versioned `@superpower/mcp-core` workspace package.
+6. Add result compression and read-only caching at the shared gateway boundary.
+7. Once both hosts are stable, package the shared core as a separately versioned `@superpower/mcp-core` workspace package.
 
 This staged migration avoids a large-bang rewrite and keeps the current extension usable throughout v1.3.

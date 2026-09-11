@@ -3,6 +3,7 @@ name: MCP Quality Gate
 on:
   pull_request:
     paths:
+      - 'packages/mcp-host/**'
       - 'packages/shared/lib/mcp-core/**'
       - 'packages/shared/index.mts'
       - 'pages/content/src/core/**'
@@ -70,9 +71,20 @@ jobs:
             echo 'Content-script TypeScript check is clean.'
           fi
 
+      - name: Check browserless MCP host
+        run: |
+          pnpm -F @superpower/mcp-host type-check
+          pnpm -F @superpower/mcp-host build
+          node packages/mcp-host/dist/cli.js --help
+
       - name: Check MCP formatting
         run: >-
           pnpm exec prettier --check
+          packages/mcp-host/package.json
+          packages/mcp-host/tsconfig.json
+          packages/mcp-host/src/host.ts
+          packages/mcp-host/src/index.ts
+          packages/mcp-host/src/cli.ts
           packages/shared/lib/mcp-core/context-budget.ts
           packages/shared/lib/mcp-core/tool-router.ts
           packages/shared/lib/mcp-core/execution-policy.ts
