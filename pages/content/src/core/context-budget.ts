@@ -26,10 +26,16 @@ export const DEFAULT_CONTEXT_BUDGET: Readonly<ContextBudgetConfig> = Object.free
   charsPerEstimatedToken: 4,
 });
 
-export const resolveContextBudget = (overrides: Partial<ContextBudgetConfig> = {}): ContextBudgetConfig => ({
-  ...DEFAULT_CONTEXT_BUDGET,
-  ...overrides,
-});
+export const resolveContextBudget = (overrides: Partial<ContextBudgetConfig> = {}): ContextBudgetConfig => {
+  const definedOverrides = Object.fromEntries(
+    Object.entries(overrides).filter(([, value]) => value !== undefined),
+  ) as Partial<ContextBudgetConfig>;
+
+  return {
+    ...DEFAULT_CONTEXT_BUDGET,
+    ...definedOverrides,
+  };
+};
 
 export const estimateTokens = (text: string, charsPerToken = DEFAULT_CONTEXT_BUDGET.charsPerEstimatedToken): number => {
   if (!text) return 0;
