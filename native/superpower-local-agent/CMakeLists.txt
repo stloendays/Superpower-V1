@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_AUTOMOC ON)
 
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Widgets Sql Network)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Widgets Sql Network)
 
 add_library(superpower_local_core STATIC
   src/agent_core.cpp
@@ -21,14 +21,14 @@ add_library(superpower_local_core STATIC
 )
 
 target_include_directories(superpower_local_core PUBLIC src)
-target_link_libraries(superpower_local_core PUBLIC Qt6::Core Qt6::Gui Qt6::Sql Qt6::Network)
+target_link_libraries(superpower_local_core PUBLIC Qt6::Core Qt6::Sql Qt6::Network)
 
 add_executable(superpower-local-agent
   src/native_main.cpp
   src/native_messaging.cpp
   src/native_messaging.h
 )
-target_link_libraries(superpower-local-agent PRIVATE superpower_local_core Qt6::Core Qt6::Gui)
+target_link_libraries(superpower-local-agent PRIVATE superpower_local_core Qt6::Core)
 
 if(WIN32)
   add_executable(superpower-local-gui WIN32
