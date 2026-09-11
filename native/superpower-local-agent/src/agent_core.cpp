@@ -1,10 +1,12 @@
 #include "agent_core.h"
 
-#include <QDesktopServices>
+#include <QDir>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonValue>
-#include <QUrl>
+#include <QProcess>
+
+#include <utility>
 
 namespace {
 
@@ -14,6 +16,16 @@ QJsonObject requestArgs(const QJsonObject& request) {
 
 QString requiredString(const QJsonObject& args, const QString& key) {
   return args.value(key).toString().trimmed();
+}
+
+bool openWithSystem(const QString& path) {
+#ifdef Q_OS_WIN
+  return QProcess::startDetached(QStringLiteral("explorer.exe"), {QDir::toNativeSeparators(path)});
+#elif defined(Q_OS_MACOS)
+  return QProcess::startDetached(QStringLiteral("/usr/bin/open"), {path});
+#else
+  return QProcess::startDetached(QStringLiteral("xdg-open"), {path});
+#endif
 }
 
 }  // namespace
@@ -125,13 +137,18 @@ QJsonObject AgentCore::handleRemember(const QJsonObject& request) {
     return failure(request, QStringLiteral("memory_error"), error);
   }
   auto memory = memoryStore_.findByAlias(alias, &error);
-  if (!memory) return failure(request, QStringLiteral("memory_error"), error.isEmpty() ? QStringLiteral("Location was saved but could not be reloaded.") : error);
+  if (!memory) {
+    return failure(request, QStringLiteral("memory_error"),
+                   error.isEmpty() ? QStringLiteral("Location was saved but could not be reloaded.") : error);
+  }
   return success(request, locationToJson(*memory));
 }
 
 QJsonObject AgentCore::handleForget(const QJsonObject& request) {
   const QString alias = requiredString(requestArgs(request), QStringLiteral("alias"));
-  if (alias.isEmpty()) return failure(request, QStringLiteral("invalid_args"), QStringLiteral("memory.forget requires alias."));
+  if (alias.isEmpty()) {
+    return failure(request, QStringLiteral("invalid_args"), QStringLiteral("memory.forget requires alias."));
+  }
 
   QString error;
   if (!memoryStore_.forgetLocation(alias, &error)) {
@@ -143,12 +160,15 @@ QJsonObject AgentCore::handleForget(const QJsonObject& request) {
 
 QJsonObject AgentCore::handleResolve(const QJsonObject& request) {
   const QString query = requiredString(requestArgs(request), QStringLiteral("query"));
-  if (query.isEmpty()) return failure(request, QStringLiteral("invalid_args"), QStringLiteral("memory.resolve requires query."));
+  if (query.isEmpty()) {
+    return failure(request, QStringLiteral("invalid_args"), QStringLiteral("memory.resolve requires query."));
+  }
 
   QString error;
   auto located = fileLocator_.resolveBest(query, &error);
   if (!located) {
-    return failure(request, QStringLiteral("not_found"), error.isEmpty() ? QStringLiteral("No matching remembered or indexed path was found.") : error);
+    return failure(request, QStringLiteral("not_found"),
+                   error.isEmpty() ? QStringLiteral("No matching remembered or indexed path was found.") : error);
   }
   return success(request, locatedPathToJson(*located));
 }
@@ -168,8 +188,11 @@ QJsonObject AgentCore::handleAddRoot(const QJsonObject& request) {
   const QJsonObject args = requestArgs(request);
   const QString path = requiredString(args, QStringLiteral("path"));
   const QString label = args.value(QStringLiteral("label")).toString();
-  const bool recursive = !args.contains(QStringLiteral("recursive")) || args.value(QStringLiteral("recursive")).toBool(true);
-  if (path.isEmpty()) return failure(request, QStringLiteral("invalid_args"), QStringLiteral("memory.add_root requires path."));
+  const bool recursive =
+      !args.contains(QStringLiteral("recursive")) || args.value(QStringLiteral("recursive")).toBool(true);
+  if (path.isEmpty()) {
+    return failure(request, QStringLiteral("invalid_args"), QStringLiteral("memory.add_root requires path."));
+  }
 
   QString error;
   if (!memoryStore_.addSearchRoot(path, label, recursive, &error)) {
@@ -191,7 +214,9 @@ QJsonObject AgentCore::handleListRoots(const QJsonObject& request) const {
 QJsonObject AgentCore::handleSearch(const QJsonObject& request) const {
   const QJsonObject args = requestArgs(request);
   const QString query = requiredString(args, QStringLiteral("query"));
-  if (query.isEmpty()) return failure(request, QStringLiteral("invalid_args"), QStringLiteral("file.search requires query."));
+  if (query.isEmpty()) {
+    return failure(request, QStringLiteral("invalid_args"), QStringLiteral("file.search requires query."));
+  }
 
   const int maxResults = args.value(QStringLiteral("max_results")).toInt(20);
   const int maxScanned = args.value(QStringLiteral("max_scanned_entries")).toInt(10000);
@@ -209,7 +234,9 @@ QJsonObject AgentCore::handleSearch(const QJsonObject& request) const {
 QJsonObject AgentCore::handleOpen(const QJsonObject& request) {
   const QJsonObject args = requestArgs(request);
   const QString query = requiredString(args, QStringLiteral("query"));
-  if (query.isEmpty()) return failure(request, QStringLiteral("invalid_args"), QStringLiteral("file.open requires query."));
+  if (query.isEmpty()) {
+    return failure(request, QStringLiteral("invalid_args"), QStringLiteral("file.open requires query."));
+  }
   if (!args.value(QStringLiteral("approved")).toBool(false)) {
     return failure(request, QStringLiteral("confirmation_required"),
                    QStringLiteral("Opening a local file or directory requires explicit user approval."), true);
@@ -218,13 +245,15 @@ QJsonObject AgentCore::handleOpen(const QJsonObject& request) {
   QString error;
   auto located = fileLocator_.resolveBest(query, &error);
   if (!located) {
-    return failure(request, QStringLiteral("not_found"), error.isEmpty() ? QStringLiteral("Target could not be resolved.") : error);
+    return failure(request, QStringLiteral("not_found"),
+                   error.isEmpty() ? QStringLiteral("Target could not be resolved.") : error);
   }
   if (!fileLocator_.isAllowedPath(located->path, &error)) {
     return failure(request, QStringLiteral("path_not_allowed"), error);
   }
-  if (!QDesktopServices::openUrl(QUrl::fromLocalFile(located->path))) {
-    return failure(request, QStringLiteral("open_failed"), QStringLiteral("The operating system could not open the target."));
+  if (!openWithSystem(located->path)) {
+    return failure(request, QStringLiteral("open_failed"),
+                   QStringLiteral("The operating system could not open the target."));
   }
   return success(request, locatedPathToJson(*located));
 }
