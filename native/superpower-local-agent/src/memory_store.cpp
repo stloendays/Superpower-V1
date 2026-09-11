@@ -7,6 +7,8 @@
 #include <QStandardPaths>
 #include <QUuid>
 
+#include <utility>
+
 namespace {
 
 QString sqlError(const QSqlQuery& query) {
@@ -16,6 +18,10 @@ QString sqlError(const QSqlQuery& query) {
 int boundedLimit(int limit, int fallback = 20, int maximum = 500) {
   if (limit <= 0) return fallback;
   return qMin(limit, maximum);
+}
+
+void clearError(QString* error) {
+  if (error) error->clear();
 }
 
 }  // namespace
@@ -33,6 +39,7 @@ MemoryStore::~MemoryStore() {
 }
 
 bool MemoryStore::open(QString* error) {
+  clearError(error);
   if (database_.isOpen()) return true;
 
   if (databasePath_.isEmpty()) {
@@ -78,6 +85,7 @@ QString MemoryStore::databasePath() const {
 }
 
 bool MemoryStore::initializeSchema(QString* error) {
+  clearError(error);
   QSqlQuery query(database_);
   const QStringList statements = {
       QStringLiteral(
@@ -115,6 +123,7 @@ bool MemoryStore::initializeSchema(QString* error) {
 }
 
 QString MemoryStore::normalizeExistingPath(const QString& path, QString* error) {
+  clearError(error);
   const QString trimmed = path.trimmed();
   if (trimmed.isEmpty()) {
     if (error) *error = QStringLiteral("Path is empty.");
@@ -133,6 +142,7 @@ QString MemoryStore::normalizeExistingPath(const QString& path, QString* error) 
 }
 
 bool MemoryStore::rememberLocation(const QString& alias, const QString& path, const QString& note, QString* error) {
+  clearError(error);
   if (!database_.isOpen() && !open(error)) return false;
 
   const QString cleanAlias = alias.trimmed();
@@ -163,6 +173,7 @@ bool MemoryStore::rememberLocation(const QString& alias, const QString& path, co
 }
 
 bool MemoryStore::forgetLocation(const QString& alias, QString* error) {
+  clearError(error);
   if (!database_.isOpen() && !open(error)) return false;
   QSqlQuery query(database_);
   query.prepare(QStringLiteral("DELETE FROM locations WHERE alias = :alias COLLATE NOCASE"));
@@ -175,6 +186,7 @@ bool MemoryStore::forgetLocation(const QString& alias, QString* error) {
 }
 
 bool MemoryStore::touchLocation(qint64 id, QString* error) {
+  clearError(error);
   if (!database_.isOpen() && !open(error)) return false;
   QSqlQuery query(database_);
   query.prepare(QStringLiteral(
@@ -200,6 +212,7 @@ LocationMemory MemoryStore::readLocationRow(const QSqlQuery& query) {
 }
 
 std::optional<LocationMemory> MemoryStore::findByAlias(const QString& alias, QString* error) const {
+  clearError(error);
   if (!database_.isOpen()) {
     if (error) *error = QStringLiteral("Memory database is not open.");
     return std::nullopt;
@@ -219,6 +232,7 @@ std::optional<LocationMemory> MemoryStore::findByAlias(const QString& alias, QSt
 }
 
 QList<LocationMemory> MemoryStore::searchAliases(const QString& queryText, int limit, QString* error) const {
+  clearError(error);
   QList<LocationMemory> results;
   if (!database_.isOpen()) {
     if (error) *error = QStringLiteral("Memory database is not open.");
@@ -234,7 +248,7 @@ QList<LocationMemory> MemoryStore::searchAliases(const QString& queryText, int l
   escaped.replace(QStringLiteral("\\"), QStringLiteral("\\\\"));
   escaped.replace(QStringLiteral("%"), QStringLiteral("\\%"));
   escaped.replace(QStringLiteral("_"), QStringLiteral("\\_"));
-  query.bindValue(QStringLiteral(":needle"), QStringLiteral("%%1%").arg(escaped));
+  query.bindValue(QStringLiteral(":needle"), QStringLiteral("%") + escaped + QStringLiteral("%"));
   query.bindValue(QStringLiteral(":limit"), boundedLimit(limit));
   if (!query.exec()) {
     if (error) *error = sqlError(query);
@@ -245,6 +259,7 @@ QList<LocationMemory> MemoryStore::searchAliases(const QString& queryText, int l
 }
 
 QList<LocationMemory> MemoryStore::listLocations(int limit, QString* error) const {
+  clearError(error);
   QList<LocationMemory> results;
   if (!database_.isOpen()) {
     if (error) *error = QStringLiteral("Memory database is not open.");
@@ -265,6 +280,7 @@ QList<LocationMemory> MemoryStore::listLocations(int limit, QString* error) cons
 }
 
 bool MemoryStore::addSearchRoot(const QString& path, const QString& label, bool recursive, QString* error) {
+  clearError(error);
   if (!database_.isOpen() && !open(error)) return false;
   const QString normalized = normalizeExistingPath(path, error);
   if (normalized.isEmpty()) return false;
@@ -288,6 +304,7 @@ bool MemoryStore::addSearchRoot(const QString& path, const QString& label, bool 
 }
 
 bool MemoryStore::removeSearchRoot(qint64 id, QString* error) {
+  clearError(error);
   if (!database_.isOpen() && !open(error)) return false;
   QSqlQuery query(database_);
   query.prepare(QStringLiteral("DELETE FROM search_roots WHERE id=:id"));
@@ -300,6 +317,7 @@ bool MemoryStore::removeSearchRoot(qint64 id, QString* error) {
 }
 
 QList<SearchRoot> MemoryStore::listSearchRoots(QString* error) const {
+  clearError(error);
   QList<SearchRoot> roots;
   if (!database_.isOpen()) {
     if (error) *error = QStringLiteral("Memory database is not open.");
