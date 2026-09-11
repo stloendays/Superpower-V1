@@ -2,7 +2,7 @@
 
 `@superpower/mcp-host` is the first-party browserless runtime for the Superpower MCP Gateway.
 
-It owns concrete MCP SDK connection setup while `@extension/shared` owns browser-agnostic routing, context budgeting, execution policy, and privacy-safe telemetry.
+It owns concrete MCP SDK connection setup while `@superpower/mcp-core` owns browser-agnostic routing, context budgeting, execution policy, and privacy-safe telemetry. The browser extension's `@extension/shared` package remains only a compatibility facade for existing imports.
 
 ## Development usage
 
@@ -51,4 +51,4 @@ For stdio child processes, use `--server-env NAME=ENV_VAR` to map a host environ
 
 ## SDK version boundary
 
-The repository currently uses the v1 monolithic `@modelcontextprotocol/sdk`. The official SDK has moved to a v2 split-package layout. This host intentionally isolates concrete SDK imports so that migration can happen here without changing Superpower Core.
+The repository currently uses the v1 monolithic `@modelcontextprotocol/sdk`. The official SDK has moved to a v2 split-package layout. Concrete SDK imports are isolated in this host so a future SDK migration does not change `@superpower/mcp-core`.
