@@ -13,14 +13,14 @@
   ],
   "scripts": {
     "ready": "tsc -b",
-    "build": "tsc -b",
+    "build": "pnpm -F @superpower/mcp-core build && tsc -b",
     "start": "pnpm run build && node dist/cli.js",
     "type-check": "tsc --noEmit",
     "prettier": "prettier . --write --ignore-path ../../.prettierignore"
   },
   "dependencies": {
-    "@extension/shared": "workspace:*",
-    "@modelcontextprotocol/sdk": "^1.20.2"
+    "@modelcontextprotocol/sdk": "^1.20.2",
+    "@superpower/mcp-core": "workspace:*"
   },
   "devDependencies": {
     "@extension/tsconfig": "workspace:*",

@@ -3,9 +3,11 @@ name: MCP Quality Gate
 on:
   pull_request:
     paths:
+      - 'packages/mcp-core/**'
       - 'packages/mcp-host/**'
       - 'packages/shared/lib/mcp-core/**'
       - 'packages/shared/index.mts'
+      - 'packages/shared/package.json'
       - 'pages/content/src/core/**'
       - 'pages/content/src/components/sidebar/Instructions/**'
       - 'pages/content/src/stores/tool.store.ts'
@@ -71,6 +73,11 @@ jobs:
             echo 'Content-script TypeScript check is clean.'
           fi
 
+      - name: Check browser-agnostic MCP core
+        run: |
+          pnpm -F @superpower/mcp-core type-check
+          pnpm -F @superpower/mcp-core build
+
       - name: Check browserless MCP host
         run: |
           pnpm -F @superpower/mcp-host type-check
@@ -80,19 +87,23 @@ jobs:
       - name: Check MCP formatting
         run: >-
           pnpm exec prettier --check
+          packages/mcp-core/package.json
+          packages/mcp-core/tsconfig.json
+          packages/mcp-core/index.mts
+          packages/mcp-core/lib/context-budget.ts
+          packages/mcp-core/lib/tool-router.ts
+          packages/mcp-core/lib/execution-policy.ts
+          packages/mcp-core/lib/mcp-telemetry.ts
+          packages/mcp-core/lib/gateway.ts
+          packages/mcp-core/lib/sdk-client-adapter.ts
           packages/mcp-host/package.json
           packages/mcp-host/tsconfig.json
           packages/mcp-host/src/host.ts
           packages/mcp-host/src/index.ts
           packages/mcp-host/src/cli.ts
-          packages/shared/lib/mcp-core/context-budget.ts
-          packages/shared/lib/mcp-core/tool-router.ts
-          packages/shared/lib/mcp-core/execution-policy.ts
-          packages/shared/lib/mcp-core/mcp-telemetry.ts
-          packages/shared/lib/mcp-core/gateway.ts
-          packages/shared/lib/mcp-core/sdk-client-adapter.ts
           packages/shared/lib/mcp-core/index.ts
           packages/shared/index.mts
+          packages/shared/package.json
           pages/content/src/core/context-budget.ts
           pages/content/src/core/tool-router.ts
           pages/content/src/core/execution-policy.ts

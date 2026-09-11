@@ -7,11 +7,10 @@ import {
   McpGatewayRejectedError,
   type ExecutionPolicyMode,
   type McpGatewayConfirmationHandler,
-} from '@extension/shared';
+} from '@superpower/mcp-core';
 import { connectSuperpowerHost, type ConnectedSuperpowerHost, type HostConnection } from './host.js';
 
 type CliCommand = 'connect' | 'tools' | 'call' | 'help';
-
 type ReadlineInterface = ReturnType<typeof createInterface>;
 
 interface ParsedCli {
@@ -71,9 +70,7 @@ const takeValue = (argv: string[], index: number, flag: string): string => {
 
 const parseReference = (value: string, flag: string): [string, string] => {
   const separator = value.indexOf('=');
-  if (separator <= 0 || separator === value.length - 1) {
-    throw new Error(`${flag} expects name=ENV_VAR.`);
-  }
+  if (separator <= 0 || separator === value.length - 1) throw new Error(`${flag} expects name=ENV_VAR.`);
   return [value.slice(0, separator), value.slice(separator + 1)];
 };
 
@@ -84,23 +81,13 @@ const parseJsonObject = (value: string): Record<string, unknown> => {
   } catch {
     throw new Error('--args must be valid JSON.');
   }
-
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error('--args must be a JSON object.');
-  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('--args must be a JSON object.');
   return parsed as Record<string, unknown>;
 };
 
 const parseCli = (argv: string[]): ParsedCli => {
   if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
-    return {
-      command: 'help',
-      taskFocus: '',
-      policyMode: 'audit',
-      toolArgs: {},
-      json: false,
-      yes: false,
-    };
+    return { command: 'help', taskFocus: '', policyMode: 'audit', toolArgs: {}, json: false, yes: false };
   }
 
   const rawCommand = argv[0];
@@ -177,14 +164,7 @@ const parseCli = (argv: string[]): ParsedCli => {
         break;
       case '-h':
       case '--help':
-        return {
-          command: 'help',
-          taskFocus,
-          policyMode,
-          toolArgs,
-          json,
-          yes,
-        };
+        return { command: 'help', taskFocus, policyMode, toolArgs, json, yes };
       default:
         throw new Error(`Unknown option: ${flag}`);
     }
@@ -195,11 +175,7 @@ const parseCli = (argv: string[]): ParsedCli => {
   if (command === 'call' && !toolName) throw new Error('call requires a tool name.');
 
   const connection: HostConnection = httpUrl
-    ? {
-        kind: 'http',
-        url: httpUrl,
-        ...(Object.keys(headerFrom).length > 0 ? { headerFrom } : {}),
-      }
+    ? { kind: 'http', url: httpUrl, ...(Object.keys(headerFrom).length > 0 ? { headerFrom } : {}) }
     : {
         kind: 'stdio',
         command: stdioCommand!,
@@ -207,16 +183,7 @@ const parseCli = (argv: string[]): ParsedCli => {
         ...(Object.keys(envFrom).length > 0 ? { envFrom } : {}),
       };
 
-  return {
-    command,
-    toolName,
-    connection,
-    taskFocus,
-    policyMode,
-    toolArgs,
-    json,
-    yes,
-  };
+  return { command, toolName, connection, taskFocus, policyMode, toolArgs, json, yes };
 };
 
 const print = (value: unknown, json = false): void => {
@@ -256,11 +223,7 @@ const findToolDescription = async (host: ConnectedSuperpowerHost, toolName: stri
   return response.tools.find(tool => tool.name === toolName)?.description ?? '';
 };
 
-const callTool = async (
-  host: ConnectedSuperpowerHost,
-  toolName: string,
-  args: Record<string, unknown>,
-): Promise<unknown> => {
+const callTool = async (host: ConnectedSuperpowerHost, toolName: string, args: Record<string, unknown>): Promise<unknown> => {
   const description = await findToolDescription(host, toolName);
   return host.gateway.callTool(toolName, args, description);
 };
@@ -288,7 +251,6 @@ const printInteractiveHelp = (): void => {
 
 const runInteractiveShell = async (host: ConnectedSuperpowerHost, readline: ReadlineInterface): Promise<void> => {
   printInteractiveHelp();
-
   while (true) {
     let input: string;
     try {
@@ -296,7 +258,6 @@ const runInteractiveShell = async (host: ConnectedSuperpowerHost, readline: Read
     } catch {
       return;
     }
-
     if (!input) continue;
     if (input === 'exit' || input === 'quit') return;
     if (input === 'help') {
@@ -315,7 +276,7 @@ const runInteractiveShell = async (host: ConnectedSuperpowerHost, readline: Read
       }
       if (input.startsWith('focus ')) {
         host.gateway.setTaskFocus(input.slice('focus '.length));
-        stdout.write(`Task focus updated.\n`);
+        stdout.write('Task focus updated.\n');
         continue;
       }
       if (input.startsWith('policy ')) {
@@ -330,11 +291,9 @@ const runInteractiveShell = async (host: ConnectedSuperpowerHost, readline: Read
         const firstSpace = body.indexOf(' ');
         const toolName = firstSpace === -1 ? body : body.slice(0, firstSpace);
         const argsText = firstSpace === -1 ? '{}' : body.slice(firstSpace + 1).trim() || '{}';
-        const args = parseJsonObject(argsText);
-        print(await callTool(host, toolName, args));
+        print(await callTool(host, toolName, parseJsonObject(argsText)));
         continue;
       }
-
       stdout.write('Unknown command. Type help.\n');
     } catch (error) {
       stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
@@ -351,12 +310,11 @@ const main = async (): Promise<void> => {
 
   const interactive = Boolean(stdin.isTTY && stdout.isTTY && !cli.json);
   const readline = interactive ? createInterface({ input: stdin, output: stdout }) : null;
-  const confirm = createConfirmationHandler(cli, readline);
   const host = await connectSuperpowerHost({
     connection: cli.connection!,
     taskFocus: cli.taskFocus,
     policyMode: cli.policyMode,
-    confirm,
+    confirm: createConfirmationHandler(cli, readline),
   });
 
   try {
@@ -364,13 +322,10 @@ const main = async (): Promise<void> => {
       await describeRoute(host, cli.json);
       return;
     }
-
     if (cli.command === 'call') {
-      const result = await callTool(host, cli.toolName!, cli.toolArgs);
-      print(result, cli.json);
+      print(await callTool(host, cli.toolName!, cli.toolArgs), cli.json);
       return;
     }
-
     await describeRoute(host, cli.json);
     if (readline) await runInteractiveShell(host, readline);
   } finally {
@@ -390,7 +345,6 @@ void main().catch(error => {
     process.exitCode = 4;
     return;
   }
-
   stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
   process.exitCode = 1;
 });

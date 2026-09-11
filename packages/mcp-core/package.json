@@ -1,0 +1,23 @@
+{
+  "name": "@superpower/mcp-core",
+  "version": "1.3.0",
+  "description": "Browser-agnostic Superpower MCP routing, policy, budgeting and telemetry core",
+  "type": "module",
+  "private": true,
+  "sideEffects": false,
+  "files": [
+    "dist/**"
+  ],
+  "types": "index.mts",
+  "main": "dist/index.mjs",
+  "scripts": {
+    "ready": "tsc -b",
+    "build": "tsc -b",
+    "type-check": "tsc --noEmit",
+    "prettier": "prettier . --write --ignore-path ../../.prettierignore"
+  },
+  "devDependencies": {
+    "@extension/tsconfig": "workspace:*",
+    "@types/node": "^22.5.5"
+  }
+}

@@ -1,0 +1,42 @@
+name: MCP Package Lock Sync
+
+on:
+  pull_request:
+    paths:
+      - 'packages/mcp-core/package.json'
+      - 'packages/mcp-host/package.json'
+      - 'packages/shared/package.json'
+      - '.github/workflows/mcp-host-lock-sync.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  sync-lock:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'feature/mcp-v1-2-optimization'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+      - name: Regenerate workspace lockfile
+        run: pnpm install --lockfile-only --no-frozen-lockfile
+      - name: Commit lockfile if changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- pnpm-lock.yaml; then
+            echo 'Lockfile already synchronized.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add pnpm-lock.yaml
+          git commit -m 'chore(mcp): sync core and host workspace lockfile'
+          git push origin "HEAD:${GITHUB_HEAD_REF}"

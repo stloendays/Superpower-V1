@@ -7,7 +7,7 @@ import {
   type McpGateway,
   type McpGatewayConfirmationHandler,
   type SdkRoutableTool,
-} from '@extension/shared';
+} from '@superpower/mcp-core';
 
 export interface StdioHostConnection {
   kind: 'stdio';
@@ -67,7 +67,7 @@ const inheritedEnvironment = (): Record<string, string> => {
 /**
  * First-party browserless host for Superpower's MCP gateway.
  *
- * This package owns concrete MCP SDK connection setup while `@extension/shared`
+ * This package owns concrete MCP SDK connection setup while `@superpower/mcp-core`
  * remains SDK- and browser-agnostic. The split keeps future SDK v2 migration local
  * to this host package rather than coupling it to routing/policy/telemetry code.
  */
