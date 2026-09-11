@@ -3,7 +3,10 @@
 #include <QDateTime>
 #include <QList>
 #include <QSqlDatabase>
+#include <QSqlQuery>
 #include <QString>
+
+#include <optional>
 
 struct LocationMemory {
   qint64 id = 0;
