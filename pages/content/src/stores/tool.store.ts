@@ -106,7 +106,8 @@ export const useToolStore = create<ToolState>()(
         const executionId = `exec_${toolName}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
         const tool = get().availableTools.find(candidate => candidate.name === toolName);
         const policy = evaluateToolExecution(toolName, parameters, tool?.description || '', 'audit');
-        const adapterName = typeof window !== 'undefined' ? window.location.hostname || 'content-script' : 'content-script';
+        const adapterName =
+          typeof window !== 'undefined' ? window.location.hostname || 'content-script' : 'content-script';
 
         pendingTelemetry.set(executionId, mcpTelemetry.begin(toolName, adapterName, policy.risk, parameters));
 
