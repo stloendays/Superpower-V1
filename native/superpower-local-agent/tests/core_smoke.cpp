@@ -1,5 +1,7 @@
 #include <QCoreApplication>
+#include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QTemporaryDir>
@@ -53,8 +55,11 @@ int main(int argc, char* argv[]) {
       {QStringLiteral("args"), QJsonObject{{QStringLiteral("query"), QStringLiteral("catalyst")}}},
   });
   if (!require(resolveResponse.value(QStringLiteral("ok")).toBool(), "resolve action should succeed")) return 1;
-  const QString resolvedPath = resolveResponse.value(QStringLiteral("result")).toObject().value(QStringLiteral("path")).toString();
-  if (!require(QFileInfo(resolvedPath) == QFileInfo(projectDir), "remembered alias should resolve to the same path")) return 1;
+  const QString resolvedPath =
+      resolveResponse.value(QStringLiteral("result")).toObject().value(QStringLiteral("path")).toString();
+  if (!require(QFileInfo(resolvedPath) == QFileInfo(projectDir), "remembered alias should resolve to the same path")) {
+    return 1;
+  }
 
   const QJsonObject rootResponse = core.handle(QJsonObject{
       {QStringLiteral("id"), QStringLiteral("root")},
@@ -71,7 +76,8 @@ int main(int argc, char* argv[]) {
                                            {QStringLiteral("max_results"), 10}}},
   });
   if (!require(searchResponse.value(QStringLiteral("ok")).toBool(), "search action should succeed")) return 1;
-  const QJsonArray matches = searchResponse.value(QStringLiteral("result")).toObject().value(QStringLiteral("matches")).toArray();
+  const QJsonArray matches =
+      searchResponse.value(QStringLiteral("result")).toObject().value(QStringLiteral("matches")).toArray();
   if (!require(!matches.isEmpty(), "approved-root search should find the test file")) return 1;
 
   const QJsonObject deniedOpen = core.handle(QJsonObject{
@@ -81,7 +87,10 @@ int main(int argc, char* argv[]) {
   });
   if (!require(!deniedOpen.value(QStringLiteral("ok")).toBool(), "file.open should require approval")) return 1;
   const QJsonObject deniedError = deniedOpen.value(QStringLiteral("error")).toObject();
-  if (!require(deniedError.value(QStringLiteral("confirmation_required")).toBool(), "open denial should be an approval request")) return 1;
+  if (!require(deniedError.value(QStringLiteral("confirmation_required")).toBool(),
+               "open denial should be an approval request")) {
+    return 1;
+  }
 
   std::cout << "Superpower Local Agent core smoke test passed.\n";
   return 0;
