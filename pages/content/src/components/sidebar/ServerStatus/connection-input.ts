@@ -21,6 +21,7 @@ export type ConnectionInputResult =
 
 const RECENT_CONNECTIONS_KEY = 'superpower:mcp-recent-connections:v1';
 const MAX_RECENT_CONNECTIONS = 5;
+const SENSITIVE_QUERY_KEY = /(token|key|secret|auth|signature|credential|password)/i;
 
 export const inferConnectionType = (uri: string): ConnectionType => {
   const normalized = uri.trim().toLowerCase();
@@ -150,40 +151,67 @@ export const parseMcpConnectionInput = (rawInput: string): ConnectionInputResult
   };
 };
 
-export const loadRecentConnections = (): RecentConnection[] => {
-  if (typeof window === 'undefined') return [];
-
+const canRememberUri = (uri: string): boolean => {
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(RECENT_CONNECTIONS_KEY) || '[]');
-    if (!Array.isArray(parsed)) return [];
-
-    return parsed
-      .filter(
-        (item): item is RecentConnection =>
-          !!item &&
-          typeof item === 'object' &&
-          typeof item.uri === 'string' &&
-          ['sse', 'websocket', 'streamable-http'].includes(item.connectionType),
-      )
-      .slice(0, MAX_RECENT_CONNECTIONS);
+    const url = new URL(uri);
+    if (url.username || url.password) return false;
+    return !Array.from(url.searchParams.keys()).some(key => SENSITIVE_QUERY_KEY.test(key));
   } catch {
-    return [];
+    return false;
   }
 };
 
-export const rememberRecentConnection = (connection: Omit<RecentConnection, 'lastUsedAt'>): RecentConnection[] => {
-  if (typeof window === 'undefined') return [];
+const storageGet = <T>(key: string): Promise<T | undefined> =>
+  new Promise(resolve => {
+    try {
+      chrome.storage.local.get(key, result => {
+        if (chrome.runtime.lastError) {
+          resolve(undefined);
+          return;
+        }
+        resolve(result[key] as T | undefined);
+      });
+    } catch {
+      resolve(undefined);
+    }
+  });
+
+const storageSet = (value: Record<string, unknown>): Promise<void> =>
+  new Promise(resolve => {
+    try {
+      chrome.storage.local.set(value, () => resolve());
+    } catch {
+      resolve();
+    }
+  });
+
+export const loadRecentConnections = async (): Promise<RecentConnection[]> => {
+  const parsed = await storageGet<unknown>(RECENT_CONNECTIONS_KEY);
+  if (!Array.isArray(parsed)) return [];
+
+  return parsed
+    .filter(
+      (item): item is RecentConnection =>
+        !!item &&
+        typeof item === 'object' &&
+        typeof item.uri === 'string' &&
+        canRememberUri(item.uri) &&
+        ['sse', 'websocket', 'streamable-http'].includes(item.connectionType),
+    )
+    .slice(0, MAX_RECENT_CONNECTIONS);
+};
+
+export const rememberRecentConnection = async (
+  connection: Omit<RecentConnection, 'lastUsedAt'>,
+): Promise<RecentConnection[]> => {
+  const current = await loadRecentConnections();
+  if (!canRememberUri(connection.uri)) return current;
 
   const next: RecentConnection[] = [
     { ...connection, lastUsedAt: Date.now() },
-    ...loadRecentConnections().filter(item => item.uri !== connection.uri),
+    ...current.filter(item => item.uri !== connection.uri),
   ].slice(0, MAX_RECENT_CONNECTIONS);
 
-  try {
-    window.localStorage.setItem(RECENT_CONNECTIONS_KEY, JSON.stringify(next));
-  } catch {
-    // Recent connections are convenience-only. Connection success must not depend on storage availability.
-  }
-
+  await storageSet({ [RECENT_CONNECTIONS_KEY]: next });
   return next;
 };
