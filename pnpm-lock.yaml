@@ -247,14 +247,23 @@ importers:
         specifier: workspace:*
         version: link:../tsconfig
 
+  packages/mcp-core:
+    devDependencies:
+      '@extension/tsconfig':
+        specifier: workspace:*
+        version: link:../tsconfig
+      '@types/node':
+        specifier: ^22.5.5
+        version: 22.13.14
+
   packages/mcp-host:
     dependencies:
-      '@extension/shared':
-        specifier: workspace:*
-        version: link:../shared
       '@modelcontextprotocol/sdk':
         specifier: ^1.20.2
         version: 1.25.2(hono@4.11.4)(zod@4.3.5)
+      '@superpower/mcp-core':
+        specifier: workspace:*
+        version: link:../mcp-core
     devDependencies:
       '@extension/tsconfig':
         specifier: workspace:*
@@ -279,6 +288,10 @@ importers:
         version: 4.19.3
 
   packages/shared:
+    dependencies:
+      '@superpower/mcp-core':
+        specifier: workspace:*
+        version: link:../mcp-core
     devDependencies:
       '@extension/storage':
         specifier: workspace:*
