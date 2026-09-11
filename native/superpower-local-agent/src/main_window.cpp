@@ -302,6 +302,22 @@ void MainWindow::renderAgentResponse(const QJsonObject& response) {
 }
 
 void MainWindow::renderBrowserEvent(const QJsonObject& event) {
+  if (event.value(QStringLiteral("type")).toString() == QStringLiteral("local-agent.message")) {
+    const QString role = event.value(QStringLiteral("role")).toString(QStringLiteral("Assistant"));
+    const QString source = event.value(QStringLiteral("source")).toString(QStringLiteral("Browser"));
+    const QString kind = event.value(QStringLiteral("kind")).toString(QStringLiteral("message"));
+    QString text = htmlEscape(event.value(QStringLiteral("text")).toString());
+    if (event.value(QStringLiteral("truncated")).toBool(false)) {
+      text += QStringLiteral("<br><span style='color:#64748b'><i>Message truncated locally.</i></span>");
+    }
+
+    QString tone = QStringLiteral("normal");
+    if (kind == QStringLiteral("success")) tone = QStringLiteral("success");
+    if (kind == QStringLiteral("warning") || kind == QStringLiteral("error")) tone = QStringLiteral("warning");
+    appendMessage(QStringLiteral("%1 · %2").arg(source, role), text, tone);
+    return;
+  }
+
   const QString action = event.value(QStringLiteral("action")).toString();
   const bool ok = event.value(QStringLiteral("ok")).toBool(false);
   QString text = QStringLiteral("Browser requested <b>%1</b> — %2")
