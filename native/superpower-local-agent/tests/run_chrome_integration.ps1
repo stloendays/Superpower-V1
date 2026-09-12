@@ -288,8 +288,8 @@ try {
     if ($guiProcess.HasExited) { throw "Qt GUI exited before integration testing with code $($guiProcess.ExitCode)." }
 
     $extensionPage = "chrome-extension://$extensionId/native-integration.html"
-    Write-Host "Starting the second real headless Chrome directly on the manifest-declared options page: $extensionPage"
-    $verificationArgs = $commonChromeArgs + @('--remote-debugging-port=9223', $extensionPage)
+    Write-Host "Starting the second real headless Chrome at about:blank; the verifier will navigate after Superpower background.js is ready: $extensionPage"
+    $verificationArgs = $commonChromeArgs + @('--remote-debugging-port=9223', 'about:blank')
     $verificationChrome = Start-Process -FilePath $ChromeExe -ArgumentList $verificationArgs -PassThru
 
     $env:CHROME_DEBUG_PORT = '9223'
