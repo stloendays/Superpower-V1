@@ -60,13 +60,146 @@ $runnerTemp = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [System.IO.Path]
 $profileDir = Join-Path $runnerTemp "superpower-chrome-native-$PID"
 $testRoot = Join-Path $runnerTemp "superpower-local-agent-e2e-$PID"
 $testPage = Join-Path $ExtensionDir 'native-integration.html'
+$testScript = Join-Path $ExtensionDir 'native-integration.js'
 $hostName = 'com.superpower.local_agent'
 $manifestPath = Join-Path $env:LOCALAPPDATA "Superpower\NativeMessaging\$hostName.json"
 $registryPath = "HKCU:\Software\Google\Chrome\NativeMessagingHosts\$hostName"
 
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $profileDir, $testRoot
 New-Item -ItemType Directory -Force -Path $profileDir, $testRoot | Out-Null
-Set-Content -LiteralPath $testPage -Encoding utf8 -Value '<!doctype html><meta charset="utf-8"><title>Superpower Native Integration</title><p>Superpower Native Messaging integration probe.</p>'
+
+$testHtml = @'
+<!doctype html>
+<meta charset="utf-8">
+<title>Superpower Native Integration</title>
+<p>Superpower Native Messaging integration probe.</p>
+<script src="native-integration.js" type="module"></script>
+'@
+
+$testJavaScript = @'
+const root = document.documentElement;
+const params = new URLSearchParams(location.search);
+const testRoot = params.get('testRoot') || '';
+const proofFile = params.get('proofFile') || '';
+const expectedExtensionId = params.get('extensionId') || '';
+
+const finish = result => {
+  root.dataset.superpowerResult = JSON.stringify(result);
+};
+
+const assert = (condition, message) => {
+  if (!condition) throw new Error(message);
+};
+
+const normalizePath = value => String(value || '').replaceAll('\\', '/').toLowerCase();
+const send = payload => chrome.runtime.sendMessage({ type: 'local-agent:request', payload });
+const runtimeId = typeof chrome !== 'undefined' && chrome.runtime ? chrome.runtime.id : undefined;
+
+let alias = '';
+let remembered = false;
+
+try {
+  assert(runtimeId === expectedExtensionId, `Extension runtime ID mismatch: expected ${expectedExtensionId}, received ${runtimeId}`);
+  assert(testRoot, 'Missing testRoot query parameter.');
+  assert(proofFile, 'Missing proofFile query parameter.');
+
+  const ping = await send({ id: 'ci-ping', action: 'ping', args: {} });
+  assert(ping?.success === true, `Bridge ping failed: ${JSON.stringify(ping)}`);
+  assert(ping?.payload?.ok === true, `Native host ping failed: ${JSON.stringify(ping)}`);
+  assert(
+    ping?.payload?.result?.service === 'superpower-local-agent',
+    `Unexpected native host identity: ${JSON.stringify(ping)}`,
+  );
+
+  const blocked = await send({
+    id: 'ci-unapproved-memory',
+    action: 'memory.remember',
+    args: { alias: 'ci-unapproved', path: testRoot },
+  });
+  assert(blocked?.success === false, 'Browser bridge accepted an unapproved local-memory scope change.');
+  assert(/approval/i.test(blocked?.error || ''), `Approval rejection was not explicit: ${JSON.stringify(blocked)}`);
+
+  alias = `ci-native-${Date.now()}`;
+  const rememberedResponse = await send({
+    id: 'ci-remember',
+    action: 'memory.remember',
+    args: { alias, path: testRoot, approved: true },
+  });
+  assert(
+    rememberedResponse?.success === true && rememberedResponse?.payload?.ok === true,
+    `Remember failed: ${JSON.stringify(rememberedResponse)}`,
+  );
+  remembered = true;
+
+  const resolved = await send({
+    id: 'ci-resolve',
+    action: 'memory.resolve',
+    args: { query: alias },
+  });
+  assert(resolved?.success === true && resolved?.payload?.ok === true, `Resolve failed: ${JSON.stringify(resolved)}`);
+  assert(
+    normalizePath(resolved?.payload?.result?.path) === normalizePath(testRoot),
+    `Resolved path mismatch: ${JSON.stringify(resolved)}`,
+  );
+
+  const searched = await send({
+    id: 'ci-search',
+    action: 'file.search',
+    args: { query: 'native-message-proof.txt', max_results: 10, max_scanned_entries: 1000 },
+  });
+  assert(searched?.success === true && searched?.payload?.ok === true, `File search failed: ${JSON.stringify(searched)}`);
+  const matches = searched?.payload?.result?.matches || [];
+  assert(
+    matches.some(match => normalizePath(match.path) === normalizePath(proofFile)),
+    `The remembered root did not yield the proof file: ${JSON.stringify(searched)}`,
+  );
+
+  const notified = await send({
+    id: 'ci-gui-notify',
+    action: 'gui.notify',
+    args: {
+      role: 'Assistant',
+      source: 'Chrome CI',
+      kind: 'success',
+      text: 'Superpower real Chrome -> Native Messaging -> C++ -> Qt GUI integration passed.',
+    },
+  });
+  assert(notified?.success === true && notified?.payload?.ok === true, `GUI notification failed: ${JSON.stringify(notified)}`);
+  assert(
+    notified?.payload?.result?.delivered === true,
+    `Native host could not deliver the message to the running Qt GUI: ${JSON.stringify(notified)}`,
+  );
+
+  const forgotten = await send({ id: 'ci-forget', action: 'memory.forget', args: { alias } });
+  assert(forgotten?.success === true && forgotten?.payload?.ok === true, `Cleanup forget failed: ${JSON.stringify(forgotten)}`);
+  remembered = false;
+
+  finish({
+    ok: true,
+    runtimeId,
+    guiDelivered: true,
+    summary: 'Chrome extension page -> background bridge -> Native Messaging -> C++ host -> SQLite/file search -> Qt GUI IPC.',
+  });
+} catch (error) {
+  if (remembered && alias) {
+    try {
+      await send({ id: 'ci-cleanup-forget', action: 'memory.forget', args: { alias } });
+    } catch {
+      // Best-effort cleanup only.
+    }
+  }
+
+  finish({
+    ok: false,
+    runtimeId,
+    guiDelivered: false,
+    error: error instanceof Error ? error.message : String(error),
+  });
+}
+'@
+
+Set-Content -LiteralPath $testPage -Encoding utf8 -Value $testHtml
+Set-Content -LiteralPath $testScript -Encoding utf8 -Value $testJavaScript
 
 $discoveryChrome = $null
 $verificationChrome = $null
@@ -119,9 +252,8 @@ try {
     Start-Sleep -Seconds 1
     if ($guiProcess.HasExited) { throw "Qt GUI exited before integration testing with code $($guiProcess.ExitCode)." }
 
-    $extensionPage = "chrome-extension://$extensionId/native-integration.html"
-    Write-Host "Starting the second real headless Chrome on the extension sender page: $extensionPage"
-    $verificationArgs = $commonChromeArgs + @('--remote-debugging-port=9223', $extensionPage)
+    Write-Host 'Starting the second real headless Chrome for extension-owned page verification...'
+    $verificationArgs = $commonChromeArgs + @('--remote-debugging-port=9223', 'about:blank')
     $verificationChrome = Start-Process -FilePath $ChromeExe -ArgumentList $verificationArgs -PassThru
 
     $env:CHROME_DEBUG_PORT = '9223'
@@ -133,7 +265,7 @@ try {
     if ($verificationChrome.HasExited) { throw "Chrome exited during the integration probe with code $($verificationChrome.ExitCode)." }
     if ($guiProcess.HasExited) { throw 'Qt GUI exited during the Native Messaging integration probe.' }
 
-    Write-Host 'PASS: real Windows Chrome extension page → background bridge → Native Messaging → C++ host → SQLite/file search → Qt GUI IPC.' -ForegroundColor Green
+    Write-Host 'PASS: real Windows Chrome extension page -> background bridge -> Native Messaging -> C++ host -> SQLite/file search -> Qt GUI IPC.' -ForegroundColor Green
 } finally {
     Stop-ProcessTree $verificationChrome
     Stop-ProcessTree $discoveryChrome
@@ -142,5 +274,5 @@ try {
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $registryPath
     Remove-Item -Force -ErrorAction SilentlyContinue $manifestPath
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $profileDir, $testRoot
-    Remove-Item -Force -ErrorAction SilentlyContinue $testPage
+    Remove-Item -Force -ErrorAction SilentlyContinue $testPage, $testScript
 }
