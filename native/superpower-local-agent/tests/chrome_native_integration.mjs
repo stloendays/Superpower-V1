@@ -61,6 +61,32 @@ async function extensionWorkerTarget(expectedId = '') {
   );
 }
 
+async function extensionPageTarget() {
+  const expectedUrl = `chrome-extension://${extensionId}/native-integration.html`;
+  const deadline = Date.now() + 30_000;
+  let lastError = '';
+  let pageTargets = [];
+
+  while (Date.now() < deadline) {
+    try {
+      const targets = await listTargets();
+      pageTargets = targets.filter(item => item.type === 'page');
+      const target = pageTargets.find(item => item.url === expectedUrl && item.webSocketDebuggerUrl);
+      if (target) return target;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+    await sleep(300);
+  }
+
+  const targetSummary = pageTargets.map(item => item.url).join(', ');
+  throw new Error(
+    `Chrome never opened the Superpower integration page ${expectedUrl}.` +
+      `${targetSummary ? ` Page targets: ${targetSummary}.` : ''}` +
+      `${lastError ? ` Last error: ${lastError}` : ''}`,
+  );
+}
+
 async function discoverExtensionId() {
   const target = await extensionWorkerTarget();
   const id = extensionIdFromTarget(target);
@@ -139,8 +165,10 @@ async function verifyIntegration() {
   const proofFile = path.join(testRoot, 'native-message-proof.txt');
   fs.writeFileSync(proofFile, 'Superpower real Native Messaging integration proof.\n', 'utf8');
 
-  const target = await extensionWorkerTarget(extensionId);
-  console.log(`Using extension service worker target: ${target.url}`);
+  const worker = await extensionWorkerTarget(extensionId);
+  console.log(`Using extension service worker target: ${worker.url}`);
+  const target = await extensionPageTarget();
+  console.log(`Using extension sender page target: ${target.url}`);
   const client = new CdpClient(target.webSocketDebuggerUrl);
   await client.connect();
 
@@ -148,7 +176,7 @@ async function verifyIntegration() {
   try {
     await client.command('Runtime.enable');
     const runtimeId = await evaluate(client, 'chrome?.runtime?.id');
-    assert(runtimeId === extensionId, `Service worker runtime ID mismatch: expected ${extensionId}, received ${runtimeId}`);
+    assert(runtimeId === extensionId, `Extension page runtime ID mismatch: expected ${extensionId}, received ${runtimeId}`);
 
     const send = payload =>
       evaluate(client, `chrome.runtime.sendMessage(${JSON.stringify({ type: 'local-agent:request', payload })})`);
@@ -220,7 +248,7 @@ async function verifyIntegration() {
     assert(forgotten?.success === true && forgotten?.payload?.ok === true, `Cleanup forget failed: ${JSON.stringify(forgotten)}`);
     alias = '';
 
-    console.log('PASS: Chrome extension → Native Messaging → C++ host → SQLite/file search → Qt GUI IPC.');
+    console.log('PASS: Chrome extension page → background bridge → Native Messaging → C++ host → SQLite/file search → Qt GUI IPC.');
   } finally {
     client.close();
   }
