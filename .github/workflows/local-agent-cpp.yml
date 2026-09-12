@@ -59,6 +59,37 @@ jobs:
           node-version-file: '.nvmrc'
           cache: pnpm
 
+      - name: Detect installed Chrome major
+        id: chrome-major
+        shell: pwsh
+        run: |
+          $chrome = Join-Path $env:ProgramFiles 'Google\Chrome\Application\chrome.exe'
+          if (-not (Test-Path -LiteralPath $chrome -PathType Leaf)) {
+            throw "Runner Chrome was not found at $chrome"
+          }
+          $version = (Get-Item -LiteralPath $chrome).VersionInfo.ProductVersion
+          $major = $version.Split('.')[0]
+          if ($major -notmatch '^\d+$') {
+            throw "Could not parse Chrome major version from $version"
+          }
+          Write-Host "Runner Chrome version: $version; installing Chrome for Testing milestone $major"
+          "major=$major" >> $env:GITHUB_OUTPUT
+
+      - name: Install matching Chrome for Testing
+        id: chrome-for-testing
+        uses: browser-actions/setup-chrome@v2
+        with:
+          chrome-version: ${{ steps.chrome-major.outputs.major }}
+
+      - name: Verify Chrome for Testing
+        shell: pwsh
+        run: |
+          $chromeForTesting = '${{ steps.chrome-for-testing.outputs.chrome-path }}'
+          if (-not (Test-Path -LiteralPath $chromeForTesting -PathType Leaf)) {
+            throw "Chrome for Testing was not found at $chromeForTesting"
+          }
+          & $chromeForTesting --version
+
       - name: Restore Qt cache
         id: qt-cache
         uses: actions/cache@v4
@@ -110,7 +141,8 @@ jobs:
           & native/superpower-local-agent/tests/run_chrome_integration.ps1 `
             -ExtensionDir dist `
             -HostExe build/local-agent/Release/superpower-local-agent.exe `
-            -GuiExe build/local-agent/Release/superpower-local-gui.exe
+            -GuiExe build/local-agent/Release/superpower-local-gui.exe `
+            -ChromeExe '${{ steps.chrome-for-testing.outputs.chrome-path }}'
 
       - uses: actions/upload-artifact@v4
         with:
