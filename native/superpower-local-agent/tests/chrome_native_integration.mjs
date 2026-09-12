@@ -44,7 +44,7 @@ async function extensionWorkerTarget(expectedId = '') {
         if (!item.webSocketDebuggerUrl) return false;
         const url = String(item.url || '');
         if (expectedOrigin) return url.startsWith(expectedOrigin);
-        return url.endsWith('/background.js') || url.includes('/background.js?');
+        return /^[a-p]{32}$/.test(extensionIdFromTarget(item));
       });
       if (target) return target;
     } catch (error) {
