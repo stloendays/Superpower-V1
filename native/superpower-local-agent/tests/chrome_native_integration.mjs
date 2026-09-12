@@ -1,12 +1,7 @@
-import fs from 'node:fs';
-import path from 'node:path';
-
 const mode = process.argv[2];
 const port = Number(process.env.CHROME_DEBUG_PORT || 0);
 const extensionPath = process.env.SUPERPOWER_EXTENSION_PATH || '';
 const extensionId = process.env.SUPERPOWER_EXTENSION_ID || '';
-const testRoot = process.env.SUPERPOWER_TEST_ROOT || '';
-const integrationStorageKey = '__superpowerNativeIntegration';
 
 if (!['discover', 'verify'].includes(mode)) {
   throw new Error('Usage: node chrome_native_integration.mjs <discover|verify>');
@@ -186,33 +181,21 @@ async function readPageResult(client) {
 
 async function verifyIntegration() {
   if (!/^[a-p]{32}$/.test(extensionId)) throw new Error('SUPERPOWER_EXTENSION_ID is invalid.');
-  if (!testRoot) throw new Error('SUPERPOWER_TEST_ROOT is required.');
-
-  fs.mkdirSync(testRoot, { recursive: true });
-  const proofFile = path.join(testRoot, 'native-message-proof.txt');
-  fs.writeFileSync(proofFile, 'Superpower real Native Messaging integration proof.\n', 'utf8');
 
   const workerTarget = await extensionWorkerTarget(extensionId);
   console.log(`Using extension service worker target: ${workerTarget.url}`);
   const workerClient = new CdpClient(workerTarget.webSocketDebuggerUrl);
   await workerClient.connect();
 
-  const pageUrl = `chrome-extension://${extensionId}/native-integration.html`;
-  const integrationConfig = { testRoot, proofFile, extensionId };
-
   try {
     await workerClient.command('Runtime.enable');
     const runtimeId = await evaluate(workerClient, 'chrome.runtime.id');
     assert(runtimeId === extensionId, `Service worker runtime ID mismatch: expected ${extensionId}, received ${runtimeId}`);
-    await evaluate(
-      workerClient,
-      `chrome.storage.local.set({ ${JSON.stringify(integrationStorageKey)}: ${JSON.stringify(integrationConfig)} })`,
-    );
-    await evaluate(workerClient, 'chrome.runtime.openOptionsPage()');
   } finally {
     workerClient.close();
   }
 
+  const pageUrl = `chrome-extension://${extensionId}/native-integration.html`;
   const pageTarget = await extensionPageTarget(pageUrl);
   console.log(`Using manifest-declared options page target: ${pageTarget.url}`);
   const pageClient = new CdpClient(pageTarget.webSocketDebuggerUrl);
