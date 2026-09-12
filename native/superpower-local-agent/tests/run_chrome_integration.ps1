@@ -46,6 +46,8 @@ $HostExe = Resolve-ExistingFile $HostExe 'Native host executable'
 $GuiExe = Resolve-ExistingFile $GuiExe 'Desktop GUI executable'
 $NodeProbe = Resolve-ExistingFile (Join-Path $PSScriptRoot 'chrome_native_integration.mjs') 'Node integration probe'
 $Installer = Resolve-ExistingFile (Join-Path $PSScriptRoot '..\install\windows\install-native-host.ps1') 'Native host installer'
+$extensionManifestPath = Resolve-ExistingFile (Join-Path $ExtensionDir 'manifest.json') 'Built extension manifest'
+$originalExtensionManifest = Get-Content -LiteralPath $extensionManifestPath -Raw
 
 if ([string]::IsNullOrWhiteSpace($ChromeExe)) {
     $candidates = @(
@@ -78,10 +80,8 @@ $testHtml = @'
 
 $testJavaScript = @'
 const root = document.documentElement;
-const params = new URLSearchParams(location.search);
-const testRoot = params.get('testRoot') || '';
-const proofFile = params.get('proofFile') || '';
-const expectedExtensionId = params.get('extensionId') || '';
+const integrationStorageKey = '__superpowerNativeIntegration';
+root.dataset.superpowerBoot = 'script-started';
 
 const finish = result => {
   root.dataset.superpowerResult = JSON.stringify(result);
@@ -92,16 +92,24 @@ const assert = (condition, message) => {
 };
 
 const normalizePath = value => String(value || '').replaceAll('\\', '/').toLowerCase();
-const send = payload => chrome.runtime.sendMessage({ type: 'local-agent:request', payload });
 const runtimeId = typeof chrome !== 'undefined' && chrome.runtime ? chrome.runtime.id : undefined;
+const send = payload => chrome.runtime.sendMessage({ type: 'local-agent:request', payload });
 
 let alias = '';
 let remembered = false;
 
 try {
+  assert(runtimeId, 'chrome.runtime.id is unavailable in the manifest-declared options page.');
+  const stored = await chrome.storage.local.get(integrationStorageKey);
+  const config = stored[integrationStorageKey] || {};
+  const testRoot = config.testRoot || '';
+  const proofFile = config.proofFile || '';
+  const expectedExtensionId = config.extensionId || '';
+
+  assert(expectedExtensionId, 'Missing expected extension ID from integration storage.');
   assert(runtimeId === expectedExtensionId, `Extension runtime ID mismatch: expected ${expectedExtensionId}, received ${runtimeId}`);
-  assert(testRoot, 'Missing testRoot query parameter.');
-  assert(proofFile, 'Missing proofFile query parameter.');
+  assert(testRoot, 'Missing testRoot from integration storage.');
+  assert(proofFile, 'Missing proofFile from integration storage.');
 
   const ping = await send({ id: 'ci-ping', action: 'ping', args: {} });
   assert(ping?.success === true, `Bridge ping failed: ${JSON.stringify(ping)}`);
@@ -173,12 +181,13 @@ try {
   const forgotten = await send({ id: 'ci-forget', action: 'memory.forget', args: { alias } });
   assert(forgotten?.success === true && forgotten?.payload?.ok === true, `Cleanup forget failed: ${JSON.stringify(forgotten)}`);
   remembered = false;
+  await chrome.storage.local.remove(integrationStorageKey);
 
   finish({
     ok: true,
     runtimeId,
     guiDelivered: true,
-    summary: 'Chrome extension page -> background bridge -> Native Messaging -> C++ host -> SQLite/file search -> Qt GUI IPC.',
+    summary: 'Chrome options page -> background bridge -> Native Messaging -> C++ host -> SQLite/file search -> Qt GUI IPC.',
   });
 } catch (error) {
   if (remembered && alias) {
@@ -187,6 +196,14 @@ try {
     } catch {
       // Best-effort cleanup only.
     }
+  }
+
+  try {
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+      await chrome.storage.local.remove(integrationStorageKey);
+    }
+  } catch {
+    // Best-effort cleanup only.
   }
 
   finish({
@@ -200,6 +217,16 @@ try {
 
 Set-Content -LiteralPath $testPage -Encoding utf8 -Value $testHtml
 Set-Content -LiteralPath $testScript -Encoding utf8 -Value $testJavaScript
+
+$extensionManifest = $originalExtensionManifest | ConvertFrom-Json
+$extensionManifest | Add-Member -NotePropertyName 'options_page' -NotePropertyValue 'native-integration.html' -Force
+$extensionManifestJson = $extensionManifest | ConvertTo-Json -Depth 100
+[System.IO.File]::WriteAllText(
+    $extensionManifestPath,
+    $extensionManifestJson,
+    [System.Text.UTF8Encoding]::new($false)
+)
+Write-Host 'Injected a CI-only manifest options_page for the Native Messaging integration probe.'
 
 $discoveryChrome = $null
 $verificationChrome = $null
@@ -252,7 +279,7 @@ try {
     Start-Sleep -Seconds 1
     if ($guiProcess.HasExited) { throw "Qt GUI exited before integration testing with code $($guiProcess.ExitCode)." }
 
-    Write-Host 'Starting the second real headless Chrome for extension-owned page verification...'
+    Write-Host 'Starting the second real headless Chrome for manifest-declared options-page verification...'
     $verificationArgs = $commonChromeArgs + @('--remote-debugging-port=9223', 'about:blank')
     $verificationChrome = Start-Process -FilePath $ChromeExe -ArgumentList $verificationArgs -PassThru
 
@@ -265,7 +292,7 @@ try {
     if ($verificationChrome.HasExited) { throw "Chrome exited during the integration probe with code $($verificationChrome.ExitCode)." }
     if ($guiProcess.HasExited) { throw 'Qt GUI exited during the Native Messaging integration probe.' }
 
-    Write-Host 'PASS: real Windows Chrome extension page -> background bridge -> Native Messaging -> C++ host -> SQLite/file search -> Qt GUI IPC.' -ForegroundColor Green
+    Write-Host 'PASS: real Windows Chrome options page -> background bridge -> Native Messaging -> C++ host -> SQLite/file search -> Qt GUI IPC.' -ForegroundColor Green
 } finally {
     Stop-ProcessTree $verificationChrome
     Stop-ProcessTree $discoveryChrome
@@ -275,4 +302,9 @@ try {
     Remove-Item -Force -ErrorAction SilentlyContinue $manifestPath
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $profileDir, $testRoot
     Remove-Item -Force -ErrorAction SilentlyContinue $testPage, $testScript
+    [System.IO.File]::WriteAllText(
+        $extensionManifestPath,
+        $originalExtensionManifest,
+        [System.Text.UTF8Encoding]::new($false)
+    )
 }
