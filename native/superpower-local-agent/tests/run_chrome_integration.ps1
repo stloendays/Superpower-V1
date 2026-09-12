@@ -270,10 +270,7 @@ try {
     $testRootJson = ConvertTo-Json -Compress -InputObject $testRoot
     $proofFileJson = ConvertTo-Json -Compress -InputObject $proofFile
     $extensionIdJson = ConvertTo-Json -Compress -InputObject $extensionId
-    $testJavaScript = $testJavaScriptTemplate
-        .Replace('__TEST_ROOT_JSON__', $testRootJson)
-        .Replace('__PROOF_FILE_JSON__', $proofFileJson)
-        .Replace('__EXTENSION_ID_JSON__', $extensionIdJson)
+    $testJavaScript = $testJavaScriptTemplate.Replace('__TEST_ROOT_JSON__', $testRootJson).Replace('__PROOF_FILE_JSON__', $proofFileJson).Replace('__EXTENSION_ID_JSON__', $extensionIdJson)
     [System.IO.File]::WriteAllText(
         $testScript,
         $testJavaScript,
