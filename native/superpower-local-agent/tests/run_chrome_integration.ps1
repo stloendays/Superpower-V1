@@ -250,6 +250,7 @@ try {
 
     $env:CHROME_DEBUG_PORT = '9222'
     $env:SUPERPOWER_EXTENSION_PATH = $ExtensionDir
+    $env:SUPERPOWER_PROFILE_DIR = $profileDir
     $discoverOutput = & node $NodeProbe discover
     if ($LASTEXITCODE -ne 0) { throw 'Extension ID discovery failed.' }
     $extensionId = ($discoverOutput | Select-Object -Last 1).Trim()
