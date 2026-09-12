@@ -6,6 +6,7 @@ const port = Number(process.env.CHROME_DEBUG_PORT || 0);
 const extensionPath = process.env.SUPERPOWER_EXTENSION_PATH || '';
 const extensionId = process.env.SUPERPOWER_EXTENSION_ID || '';
 const testRoot = process.env.SUPERPOWER_TEST_ROOT || '';
+const integrationStorageKey = '__superpowerNativeIntegration';
 
 if (!['discover', 'verify'].includes(mode)) {
   throw new Error('Usage: node chrome_native_integration.mjs <discover|verify>');
@@ -169,7 +170,18 @@ async function readPageResult(client) {
     }
     await sleep(200);
   }
-  throw new Error('Integration page did not publish a result within 30 seconds.');
+
+  const diagnostics = await evaluate(
+    client,
+    `({
+      readyState: document.readyState,
+      boot: document.documentElement.dataset.superpowerBoot || '',
+      title: document.title,
+      scripts: Array.from(document.scripts).map(script => script.src || '<inline>'),
+      bodyText: document.body?.innerText || ''
+    })`,
+  );
+  throw new Error(`Integration page did not publish a result within 30 seconds. Diagnostics: ${JSON.stringify(diagnostics)}`);
 }
 
 async function verifyIntegration() {
@@ -185,23 +197,24 @@ async function verifyIntegration() {
   const workerClient = new CdpClient(workerTarget.webSocketDebuggerUrl);
   await workerClient.connect();
 
-  const pageUrl = `chrome-extension://${extensionId}/native-integration.html?${new URLSearchParams({
-    testRoot,
-    proofFile,
-    extensionId,
-  }).toString()}`;
+  const pageUrl = `chrome-extension://${extensionId}/native-integration.html`;
+  const integrationConfig = { testRoot, proofFile, extensionId };
 
   try {
     await workerClient.command('Runtime.enable');
     const runtimeId = await evaluate(workerClient, 'chrome.runtime.id');
     assert(runtimeId === extensionId, `Service worker runtime ID mismatch: expected ${extensionId}, received ${runtimeId}`);
-    await evaluate(workerClient, `chrome.tabs.create({ url: ${JSON.stringify(pageUrl)} })`);
+    await evaluate(
+      workerClient,
+      `chrome.storage.local.set({ ${JSON.stringify(integrationStorageKey)}: ${JSON.stringify(integrationConfig)} })`,
+    );
+    await evaluate(workerClient, 'chrome.runtime.openOptionsPage()');
   } finally {
     workerClient.close();
   }
 
   const pageTarget = await extensionPageTarget(pageUrl);
-  console.log(`Using extension-owned sender page target: ${pageTarget.url}`);
+  console.log(`Using manifest-declared options page target: ${pageTarget.url}`);
   const pageClient = new CdpClient(pageTarget.webSocketDebuggerUrl);
   await pageClient.connect();
 
