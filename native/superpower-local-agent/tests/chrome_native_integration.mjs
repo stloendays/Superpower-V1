@@ -106,21 +106,33 @@ class CdpClient {
   }
 }
 
-async function extensionPageTarget() {
-  const expectedUrl = `chrome-extension://${extensionId}/native-integration.html`;
+async function extensionWorkerTarget() {
+  const expectedOrigin = `chrome-extension://${extensionId}/`;
   const deadline = Date.now() + 30_000;
   let lastError = '';
+  let extensionTargets = [];
   while (Date.now() < deadline) {
     try {
-      const target = (await listTargets()).find(item => item.url === expectedUrl && item.webSocketDebuggerUrl);
+      const targets = await listTargets();
+      extensionTargets = targets.filter(item => String(item.url || '').startsWith('chrome-extension://'));
+      const target = extensionTargets.find(
+        item =>
+          item.type === 'service_worker' &&
+          String(item.url || '').startsWith(expectedOrigin) &&
+          item.webSocketDebuggerUrl,
+      );
       if (target) return target;
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error);
     }
     await sleep(300);
   }
+
+  const targetSummary = extensionTargets.map(item => `${item.type}:${item.url}`).join(', ');
   throw new Error(
-    `Chrome never exposed the integration extension page: ${expectedUrl}.${lastError ? ` Last error: ${lastError}` : ''}`,
+    `Chrome never exposed Superpower's MV3 service worker for ${extensionId}.` +
+      `${targetSummary ? ` Extension targets: ${targetSummary}.` : ''}` +
+      `${lastError ? ` Last error: ${lastError}` : ''}`,
   );
 }
 
@@ -149,13 +161,17 @@ async function verifyIntegration() {
   const proofFile = path.join(testRoot, 'native-message-proof.txt');
   fs.writeFileSync(proofFile, 'Superpower real Native Messaging integration proof.\n', 'utf8');
 
-  const target = await extensionPageTarget();
+  const target = await extensionWorkerTarget();
+  console.log(`Using extension service worker target: ${target.url}`);
   const client = new CdpClient(target.webSocketDebuggerUrl);
   await client.connect();
 
   let alias = '';
   try {
     await client.command('Runtime.enable');
+    const runtimeId = await evaluate(client, 'chrome?.runtime?.id');
+    assert(runtimeId === extensionId, `Service worker runtime ID mismatch: expected ${extensionId}, received ${runtimeId}`);
+
     const send = payload =>
       evaluate(client, `chrome.runtime.sendMessage(${JSON.stringify({ type: 'local-agent:request', payload })})`);
 
