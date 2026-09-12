@@ -4,7 +4,7 @@
   "description": "Superpower Chrome extension core",
   "type": "module",
   "private": true,
-  "sideEffects": ["./src/background-entry.ts", "./src/background/**/*.ts"],
+  "sideEffects": true,
   "scripts": {
     "clean:node_modules": "pnpm dlx rimraf node_modules",
     "clean:turbo": "rimraf .turbo",
