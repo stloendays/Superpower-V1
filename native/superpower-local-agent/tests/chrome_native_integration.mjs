@@ -22,6 +22,11 @@ async function listTargets() {
   return response.json();
 }
 
+function extensionIdFromTarget(target) {
+  const match = String(target?.url || '').match(/^chrome-extension:\/\/([a-p]{32})\//);
+  return match?.[1] || '';
+}
+
 function extensionIdsAndPathsFromPreferences() {
   if (!profileDir) return [];
 
@@ -52,30 +57,41 @@ function extensionIdsAndPathsFromPreferences() {
 }
 
 async function discoverExtensionId() {
-  if (!profileDir) throw new Error('SUPERPOWER_PROFILE_DIR is required for deterministic Extension ID discovery.');
-
   const expectedPath = normalizePath(extensionPath);
   const deadline = Date.now() + 30_000;
   let lastCandidates = [];
   let lastTargetSummary = '';
 
   while (Date.now() < deadline) {
-    lastCandidates = extensionIdsAndPathsFromPreferences();
-    const exact = lastCandidates.find(candidate => normalizePath(candidate.path) === expectedPath);
-    if (exact) {
-      console.log(`Matched unpacked extension path in Chrome preferences: ${exact.path}`);
-      process.stdout.write(`${exact.id}\n`);
-      return;
-    }
-
     try {
       const targets = await listTargets();
+      const exactWorker = targets.find(item => {
+        if (item.type !== 'service_worker' || !item.webSocketDebuggerUrl) return false;
+        return /^chrome-extension:\/\/[a-p]{32}\/background\.js(?:\?.*)?$/.test(String(item.url || ''));
+      });
+      if (exactWorker) {
+        const id = extensionIdFromTarget(exactWorker);
+        console.log(`Matched Superpower's manifest-declared background worker: ${exactWorker.url}`);
+        process.stdout.write(`${id}\n`);
+        return;
+      }
+
       lastTargetSummary = targets
         .filter(item => String(item.url || '').startsWith('chrome-extension://'))
         .map(item => `${item.type}:${item.url}`)
         .join(', ');
     } catch {
-      // DevTools may still be starting; preference matching remains authoritative.
+      // DevTools may still be starting.
+    }
+
+    if (profileDir) {
+      lastCandidates = extensionIdsAndPathsFromPreferences();
+      const exact = lastCandidates.find(candidate => normalizePath(candidate.path) === expectedPath);
+      if (exact) {
+        console.log(`Matched unpacked extension path in Chrome preferences: ${exact.path}`);
+        process.stdout.write(`${exact.id}\n`);
+        return;
+      }
     }
 
     await sleep(300);
@@ -83,7 +99,7 @@ async function discoverExtensionId() {
 
   const candidateSummary = lastCandidates.map(candidate => `${candidate.id}:${candidate.path}`).join(', ');
   throw new Error(
-    `Could not find the unpacked Superpower extension path ${expectedPath} in Chrome profile ${profileDir}.` +
+    `Could not identify Superpower from its /background.js worker${profileDir ? ` or unpacked path ${expectedPath}` : ''}.` +
       `${candidateSummary ? ` Preference candidates: ${candidateSummary}.` : ''}` +
       `${lastTargetSummary ? ` DevTools extension targets: ${lastTargetSummary}.` : ''}`,
   );
