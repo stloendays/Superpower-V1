@@ -59,14 +59,12 @@ $ChromeExe = Resolve-ExistingFile $ChromeExe 'Google Chrome executable'
 $runnerTemp = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [System.IO.Path]::GetTempPath() }
 $profileDir = Join-Path $runnerTemp "superpower-chrome-native-$PID"
 $testRoot = Join-Path $runnerTemp "superpower-local-agent-e2e-$PID"
-$testPage = Join-Path $ExtensionDir 'native-integration.html'
 $hostName = 'com.superpower.local_agent'
 $manifestPath = Join-Path $env:LOCALAPPDATA "Superpower\NativeMessaging\$hostName.json"
 $registryPath = "HKCU:\Software\Google\Chrome\NativeMessagingHosts\$hostName"
 
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $profileDir, $testRoot
 New-Item -ItemType Directory -Force -Path $profileDir, $testRoot | Out-Null
-Set-Content -LiteralPath $testPage -Encoding utf8 -Value '<!doctype html><meta charset="utf-8"><title>Superpower Native Integration</title><p>Superpower Native Messaging integration probe.</p>'
 
 $chromeProcess = $null
 $guiProcess = $null
@@ -95,7 +93,6 @@ try {
     Start-Sleep -Seconds 1
     if ($guiProcess.HasExited) { throw "Qt GUI exited before integration testing with code $($guiProcess.ExitCode)." }
 
-    $extensionPage = "chrome-extension://$extensionId/native-integration.html"
     $chromeArgs = @(
         '--headless=new',
         "--user-data-dir=$profileDir",
@@ -110,7 +107,7 @@ try {
         '--disable-component-update',
         '--disable-sync',
         '--disable-gpu',
-        $extensionPage
+        'about:blank'
     )
 
     Write-Host 'Starting real headless Chrome with the built Superpower extension...'
@@ -134,5 +131,4 @@ try {
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $registryPath
     Remove-Item -Force -ErrorAction SilentlyContinue $manifestPath
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $profileDir, $testRoot
-    Remove-Item -Force -ErrorAction SilentlyContinue $testPage
 }
