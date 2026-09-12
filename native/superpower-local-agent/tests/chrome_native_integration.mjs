@@ -1,67 +1,63 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
 const mode = process.argv[2];
 const port = Number(process.env.CHROME_DEBUG_PORT || 0);
 const extensionPath = process.env.SUPERPOWER_EXTENSION_PATH || '';
-const profileDir = process.env.SUPERPOWER_PROFILE_DIR || '';
 const extensionId = process.env.SUPERPOWER_EXTENSION_ID || '';
 const testRoot = process.env.SUPERPOWER_TEST_ROOT || '';
 
-if (!['discover', 'verify'].includes(mode)) {
-  throw new Error('Usage: node chrome_native_integration.mjs <discover|verify>');
+if (!['prepare', 'verify'].includes(mode)) {
+  throw new Error('Usage: node chrome_native_integration.mjs <prepare|verify>');
 }
-if (!Number.isInteger(port) || port <= 0) throw new Error('CHROME_DEBUG_PORT is required.');
+if (!extensionPath) throw new Error('SUPERPOWER_EXTENSION_PATH is required.');
+if (mode === 'verify' && (!Number.isInteger(port) || port <= 0)) {
+  throw new Error('CHROME_DEBUG_PORT is required for verify mode.');
+}
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const normalizePath = value => path.resolve(value).replaceAll('\\', '/').toLowerCase();
+
+function extensionIdFromPublicKey(publicKeyDer) {
+  const digest = crypto.createHash('sha256').update(publicKeyDer).digest().subarray(0, 16);
+  let id = '';
+  for (const byte of digest) {
+    id += String.fromCharCode(97 + (byte >> 4));
+    id += String.fromCharCode(97 + (byte & 0x0f));
+  }
+  return id;
+}
+
+function prepareExtension() {
+  const manifestPath = path.join(extensionPath, 'manifest.json');
+  const backgroundPath = path.join(extensionPath, 'background.js');
+  if (!fs.existsSync(manifestPath)) throw new Error(`Built extension manifest not found: ${manifestPath}`);
+  if (!fs.existsSync(backgroundPath)) throw new Error(`Built background service worker not found: ${backgroundPath}`);
+
+  const backgroundSize = fs.statSync(backgroundPath).size;
+  if (backgroundSize < 1024) {
+    throw new Error(`background.js is unexpectedly small (${backgroundSize} bytes); the service worker was likely tree-shaken.`);
+  }
+
+  const { publicKey } = crypto.generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: 'spki', format: 'der' },
+    privateKeyEncoding: { type: 'pkcs8', format: 'der' },
+  });
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  manifest.key = publicKey.toString('base64');
+  fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+
+  const id = extensionIdFromPublicKey(publicKey);
+  if (!/^[a-p]{32}$/.test(id)) throw new Error(`Generated invalid Chrome extension ID: ${id}`);
+  process.stdout.write(`${id}\n`);
+}
 
 async function listTargets() {
   const response = await fetch(`http://127.0.0.1:${port}/json/list`);
   if (!response.ok) throw new Error(`Chrome DevTools target query failed: HTTP ${response.status}`);
   return response.json();
-}
-
-function extensionIdFromTargets(targets) {
-  for (const target of targets) {
-    const match = String(target.url || '').match(/^chrome-extension:\/\/([a-p]{32})\//);
-    if (match && String(target.url).includes('background.js')) return match[1];
-  }
-  return '';
-}
-
-function extensionIdFromPreferences() {
-  if (!profileDir || !extensionPath) return '';
-  const preferencesPath = path.join(profileDir, 'Default', 'Preferences');
-  if (!fs.existsSync(preferencesPath)) return '';
-
-  try {
-    const preferences = JSON.parse(fs.readFileSync(preferencesPath, 'utf8'));
-    const settings = preferences?.extensions?.settings || {};
-    const expected = normalizePath(extensionPath);
-    for (const [id, setting] of Object.entries(settings)) {
-      if (!/^[a-p]{32}$/.test(id)) continue;
-      if (typeof setting?.path === 'string' && normalizePath(setting.path) === expected) return id;
-    }
-  } catch {
-    return '';
-  }
-  return '';
-}
-
-async function discoverExtensionId() {
-  const deadline = Date.now() + 30_000;
-  let lastError = '';
-  while (Date.now() < deadline) {
-    try {
-      const id = extensionIdFromTargets(await listTargets()) || extensionIdFromPreferences();
-      if (id) return id;
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
-    }
-    await sleep(400);
-  }
-  throw new Error(`Could not discover the unpacked Superpower extension ID.${lastError ? ` Last error: ${lastError}` : ''}`);
 }
 
 class CdpClient {
@@ -113,16 +109,19 @@ class CdpClient {
 async function extensionPageTarget() {
   const expectedUrl = `chrome-extension://${extensionId}/native-integration.html`;
   const deadline = Date.now() + 30_000;
+  let lastError = '';
   while (Date.now() < deadline) {
     try {
       const target = (await listTargets()).find(item => item.url === expectedUrl && item.webSocketDebuggerUrl);
       if (target) return target;
-    } catch {
-      // Chrome may still be starting.
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
     }
     await sleep(300);
   }
-  throw new Error(`Chrome never opened the integration extension page: ${expectedUrl}`);
+  throw new Error(
+    `Chrome never exposed the integration extension page: ${expectedUrl}.${lastError ? ` Last error: ${lastError}` : ''}`,
+  );
 }
 
 function assert(condition, message) {
@@ -154,13 +153,11 @@ async function verifyIntegration() {
   const client = new CdpClient(target.webSocketDebuggerUrl);
   await client.connect();
 
+  let alias = '';
   try {
     await client.command('Runtime.enable');
     const send = payload =>
-      evaluate(
-        client,
-        `chrome.runtime.sendMessage(${JSON.stringify({ type: 'local-agent:request', payload })})`,
-      );
+      evaluate(client, `chrome.runtime.sendMessage(${JSON.stringify({ type: 'local-agent:request', payload })})`);
 
     const ping = await send({ id: 'ci-ping', action: 'ping', args: {} });
     assert(ping?.success === true, `Bridge ping failed: ${JSON.stringify(ping)}`);
@@ -178,7 +175,7 @@ async function verifyIntegration() {
     assert(blocked?.success === false, 'Browser bridge accepted an unapproved local-memory scope change.');
     assert(/approval/i.test(blocked?.error || ''), `Approval rejection was not explicit: ${JSON.stringify(blocked)}`);
 
-    const alias = `ci-native-${Date.now()}`;
+    alias = `ci-native-${Date.now()}`;
     const remembered = await send({
       id: 'ci-remember',
       action: 'memory.remember',
@@ -225,14 +222,18 @@ async function verifyIntegration() {
       `Native host could not deliver the message to the running Qt GUI: ${JSON.stringify(notified)}`,
     );
 
+    const forgotten = await send({ id: 'ci-forget', action: 'memory.forget', args: { alias } });
+    assert(forgotten?.success === true && forgotten?.payload?.ok === true, `Cleanup forget failed: ${JSON.stringify(forgotten)}`);
+    alias = '';
+
     console.log('PASS: Chrome extension → Native Messaging → C++ host → SQLite/file search → Qt GUI IPC.');
   } finally {
     client.close();
   }
 }
 
-if (mode === 'discover') {
-  process.stdout.write(`${await discoverExtensionId()}\n`);
+if (mode === 'prepare') {
+  prepareExtension();
 } else {
   await verifyIntegration();
 }
