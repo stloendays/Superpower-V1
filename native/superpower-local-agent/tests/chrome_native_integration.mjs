@@ -56,6 +56,38 @@ function extensionIdsAndPathsFromPreferences() {
   return discovered;
 }
 
+async function exactBackgroundWorker(expectedId) {
+  const expectedUrl = `chrome-extension://${expectedId}/background.js`;
+  const deadline = Date.now() + 30_000;
+  let lastTargetSummary = '';
+
+  while (Date.now() < deadline) {
+    try {
+      const targets = await listTargets();
+      const target = targets.find(
+        item =>
+          item.type === 'service_worker' &&
+          item.webSocketDebuggerUrl &&
+          (String(item.url || '') === expectedUrl || String(item.url || '').startsWith(`${expectedUrl}?`)),
+      );
+      if (target) return target;
+
+      lastTargetSummary = targets
+        .filter(item => String(item.url || '').startsWith('chrome-extension://'))
+        .map(item => `${item.type}:${item.url}`)
+        .join(', ');
+    } catch {
+      // DevTools may still be starting.
+    }
+    await sleep(300);
+  }
+
+  throw new Error(
+    `Superpower background worker did not become ready at ${expectedUrl}.` +
+      `${lastTargetSummary ? ` Extension targets: ${lastTargetSummary}.` : ''}`,
+  );
+}
+
 async function discoverExtensionId() {
   const expectedPath = normalizePath(extensionPath);
   const deadline = Date.now() + 30_000;
@@ -105,29 +137,44 @@ async function discoverExtensionId() {
   );
 }
 
-async function extensionPageTarget(expectedUrl) {
+async function startupPageTarget() {
   const deadline = Date.now() + 30_000;
-  let lastError = '';
   let pageTargets = [];
-
   while (Date.now() < deadline) {
     try {
       const targets = await listTargets();
-      pageTargets = targets.filter(item => item.type === 'page');
-      const target = pageTargets.find(item => item.url === expectedUrl && item.webSocketDebuggerUrl);
-      if (target) return target;
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
+      pageTargets = targets.filter(item => item.type === 'page' && item.webSocketDebuggerUrl);
+      const blank = pageTargets.find(item => item.url === 'about:blank');
+      if (blank) return blank;
+      if (pageTargets.length > 0) return pageTargets[0];
+    } catch {
+      // Chrome may still be starting.
     }
     await sleep(300);
   }
 
-  const targetSummary = pageTargets.map(item => item.url).join(', ');
   throw new Error(
-    `Chrome never opened the Superpower integration page ${expectedUrl}.` +
-      `${targetSummary ? ` Page targets: ${targetSummary}.` : ''}` +
-      `${lastError ? ` Last error: ${lastError}` : ''}`,
+    `Chrome never exposed a page target for integration navigation.` +
+      `${pageTargets.length ? ` Page targets: ${pageTargets.map(item => item.url).join(', ')}.` : ''}`,
   );
+}
+
+async function waitForTargetUrl(targetId, expectedUrl) {
+  const deadline = Date.now() + 15_000;
+  let lastUrl = '';
+  while (Date.now() < deadline) {
+    try {
+      const target = (await listTargets()).find(item => item.id === targetId);
+      if (target) {
+        lastUrl = String(target.url || '');
+        if (lastUrl === expectedUrl) return;
+      }
+    } catch {
+      // Navigation may be in flight.
+    }
+    await sleep(200);
+  }
+  throw new Error(`Chrome did not navigate the integration tab to ${expectedUrl}. Last URL: ${lastUrl}`);
 }
 
 class CdpClient {
@@ -197,7 +244,12 @@ async function readPageResult(client) {
   const deadline = Date.now() + 30_000;
   let raw = '';
   while (Date.now() < deadline) {
-    raw = await evaluate(client, 'document.documentElement.dataset.superpowerResult || ""');
+    try {
+      raw = await evaluate(client, 'document.documentElement.dataset.superpowerResult || ""');
+    } catch {
+      await sleep(200);
+      continue;
+    }
     if (raw) {
       try {
         return JSON.parse(raw);
@@ -224,14 +276,22 @@ async function readPageResult(client) {
 async function verifyIntegration() {
   if (!/^[a-p]{32}$/.test(extensionId)) throw new Error('SUPERPOWER_EXTENSION_ID is invalid.');
 
+  const worker = await exactBackgroundWorker(extensionId);
+  console.log(`Confirmed Superpower background worker: ${worker.url}`);
+
   const pageUrl = `chrome-extension://${extensionId}/native-integration.html`;
-  const pageTarget = await extensionPageTarget(pageUrl);
-  console.log(`Using Superpower options page target: ${pageTarget.url}`);
+  const pageTarget = await startupPageTarget();
+  console.log(`Navigating Chrome integration tab from ${pageTarget.url} to ${pageUrl}`);
   const pageClient = new CdpClient(pageTarget.webSocketDebuggerUrl);
   await pageClient.connect();
 
   try {
+    await pageClient.command('Page.enable');
+    const navigation = await pageClient.command('Page.navigate', { url: pageUrl });
+    if (navigation.errorText) throw new Error(`Chrome rejected extension page navigation: ${navigation.errorText}`);
+    await waitForTargetUrl(pageTarget.id, pageUrl);
     await pageClient.command('Runtime.enable');
+
     const result = await readPageResult(pageClient);
     assert(result?.ok === true, `Extension integration page failed: ${JSON.stringify(result)}`);
     assert(result?.runtimeId === extensionId, `Extension page reported wrong runtime ID: ${JSON.stringify(result)}`);
