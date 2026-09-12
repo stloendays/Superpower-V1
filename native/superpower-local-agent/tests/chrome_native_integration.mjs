@@ -1,7 +1,11 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
 const mode = process.argv[2];
 const port = Number(process.env.CHROME_DEBUG_PORT || 0);
 const extensionPath = process.env.SUPERPOWER_EXTENSION_PATH || '';
 const extensionId = process.env.SUPERPOWER_EXTENSION_ID || '';
+const profileDir = process.env.SUPERPOWER_PROFILE_DIR || '';
 
 if (!['discover', 'verify'].includes(mode)) {
   throw new Error('Usage: node chrome_native_integration.mjs <discover|verify>');
@@ -10,6 +14,7 @@ if (!Number.isInteger(port) || port <= 0) throw new Error('CHROME_DEBUG_PORT is 
 if (!extensionPath) throw new Error('SUPERPOWER_EXTENSION_PATH is required.');
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const normalizePath = value => path.resolve(String(value || '')).replaceAll('\\', '/').toLowerCase();
 
 async function listTargets() {
   const response = await fetch(`http://127.0.0.1:${port}/json/list`);
@@ -17,42 +22,70 @@ async function listTargets() {
   return response.json();
 }
 
-function extensionIdFromTarget(target) {
-  const match = String(target?.url || '').match(/^chrome-extension:\/\/([a-p]{32})\//);
-  return match?.[1] || '';
+function extensionIdsAndPathsFromPreferences() {
+  if (!profileDir) return [];
+
+  const preferenceFiles = [
+    path.join(profileDir, 'Default', 'Preferences'),
+    path.join(profileDir, 'Default', 'Secure Preferences'),
+  ];
+  const discovered = [];
+
+  for (const preferenceFile of preferenceFiles) {
+    if (!fs.existsSync(preferenceFile)) continue;
+
+    try {
+      const preferences = JSON.parse(fs.readFileSync(preferenceFile, 'utf8'));
+      const settings = preferences?.extensions?.settings || {};
+      for (const [id, setting] of Object.entries(settings)) {
+        if (!/^[a-p]{32}$/.test(id)) continue;
+        const configuredPath = typeof setting?.path === 'string' ? setting.path : '';
+        if (!configuredPath) continue;
+        discovered.push({ id, path: configuredPath, source: preferenceFile });
+      }
+    } catch {
+      // Chrome may be rewriting a preference file while it is starting. Retry on the next poll.
+    }
+  }
+
+  return discovered;
 }
 
-async function extensionWorkerTarget(expectedId = '') {
-  const expectedOrigin = expectedId ? `chrome-extension://${expectedId}/` : '';
+async function discoverExtensionId() {
+  if (!profileDir) throw new Error('SUPERPOWER_PROFILE_DIR is required for deterministic Extension ID discovery.');
+
+  const expectedPath = normalizePath(extensionPath);
   const deadline = Date.now() + 30_000;
-  let lastError = '';
-  let extensionTargets = [];
+  let lastCandidates = [];
+  let lastTargetSummary = '';
 
   while (Date.now() < deadline) {
+    lastCandidates = extensionIdsAndPathsFromPreferences();
+    const exact = lastCandidates.find(candidate => normalizePath(candidate.path) === expectedPath);
+    if (exact) {
+      console.log(`Matched unpacked extension path in Chrome preferences: ${exact.path}`);
+      process.stdout.write(`${exact.id}\n`);
+      return;
+    }
+
     try {
       const targets = await listTargets();
-      extensionTargets = targets.filter(
-        item => item.type === 'service_worker' && String(item.url || '').startsWith('chrome-extension://'),
-      );
-
-      const target = extensionTargets.find(item => {
-        if (!item.webSocketDebuggerUrl) return false;
-        const url = String(item.url || '');
-        if (expectedOrigin) return url.startsWith(expectedOrigin);
-        return /^[a-p]{32}$/.test(extensionIdFromTarget(item));
-      });
-      if (target) return target;
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
+      lastTargetSummary = targets
+        .filter(item => String(item.url || '').startsWith('chrome-extension://'))
+        .map(item => `${item.type}:${item.url}`)
+        .join(', ');
+    } catch {
+      // DevTools may still be starting; preference matching remains authoritative.
     }
+
     await sleep(300);
   }
 
-  const targetSummary = extensionTargets.map(item => `${item.type}:${item.url}`).join(', ');
+  const candidateSummary = lastCandidates.map(candidate => `${candidate.id}:${candidate.path}`).join(', ');
   throw new Error(
-    `Chrome never exposed Superpower's MV3 service worker${expectedId ? ` for ${expectedId}` : ''}.` +
-      `${targetSummary ? ` Extension targets: ${targetSummary}.` : ''}` +
-      `${lastError ? ` Last error: ${lastError}` : ''}`,
+    `Could not find the unpacked Superpower extension path ${expectedPath} in Chrome profile ${profileDir}.` +
+      `${candidateSummary ? ` Preference candidates: ${candidateSummary}.` : ''}` +
+      `${lastTargetSummary ? ` DevTools extension targets: ${lastTargetSummary}.` : ''}`,
   );
 }
 
@@ -79,13 +112,6 @@ async function extensionPageTarget(expectedUrl) {
       `${targetSummary ? ` Page targets: ${targetSummary}.` : ''}` +
       `${lastError ? ` Last error: ${lastError}` : ''}`,
   );
-}
-
-async function discoverExtensionId() {
-  const target = await extensionWorkerTarget();
-  const id = extensionIdFromTarget(target);
-  if (!/^[a-p]{32}$/.test(id)) throw new Error(`Could not read a valid extension ID from ${target.url}`);
-  process.stdout.write(`${id}\n`);
 }
 
 class CdpClient {
@@ -182,22 +208,9 @@ async function readPageResult(client) {
 async function verifyIntegration() {
   if (!/^[a-p]{32}$/.test(extensionId)) throw new Error('SUPERPOWER_EXTENSION_ID is invalid.');
 
-  const workerTarget = await extensionWorkerTarget(extensionId);
-  console.log(`Using extension service worker target: ${workerTarget.url}`);
-  const workerClient = new CdpClient(workerTarget.webSocketDebuggerUrl);
-  await workerClient.connect();
-
-  try {
-    await workerClient.command('Runtime.enable');
-    const runtimeId = await evaluate(workerClient, 'chrome.runtime.id');
-    assert(runtimeId === extensionId, `Service worker runtime ID mismatch: expected ${extensionId}, received ${runtimeId}`);
-  } finally {
-    workerClient.close();
-  }
-
   const pageUrl = `chrome-extension://${extensionId}/native-integration.html`;
   const pageTarget = await extensionPageTarget(pageUrl);
-  console.log(`Using manifest-declared options page target: ${pageTarget.url}`);
+  console.log(`Using Superpower options page target: ${pageTarget.url}`);
   const pageClient = new CdpClient(pageTarget.webSocketDebuggerUrl);
   await pageClient.connect();
 
