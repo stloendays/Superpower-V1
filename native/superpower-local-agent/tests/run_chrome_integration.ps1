@@ -59,12 +59,14 @@ $ChromeExe = Resolve-ExistingFile $ChromeExe 'Google Chrome executable'
 $runnerTemp = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [System.IO.Path]::GetTempPath() }
 $profileDir = Join-Path $runnerTemp "superpower-chrome-native-$PID"
 $testRoot = Join-Path $runnerTemp "superpower-local-agent-e2e-$PID"
+$testPage = Join-Path $ExtensionDir 'native-integration.html'
 $hostName = 'com.superpower.local_agent'
 $manifestPath = Join-Path $env:LOCALAPPDATA "Superpower\NativeMessaging\$hostName.json"
 $registryPath = "HKCU:\Software\Google\Chrome\NativeMessagingHosts\$hostName"
 
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $profileDir, $testRoot
 New-Item -ItemType Directory -Force -Path $profileDir, $testRoot | Out-Null
+Set-Content -LiteralPath $testPage -Encoding utf8 -Value '<!doctype html><meta charset="utf-8"><title>Superpower Native Integration</title><p>Superpower Native Messaging integration probe.</p>'
 
 $discoveryChrome = $null
 $verificationChrome = $null
@@ -90,12 +92,12 @@ try {
         '--disable-background-networking',
         '--disable-component-update',
         '--disable-sync',
-        '--disable-gpu',
-        'about:blank'
+        '--disable-gpu'
     )
 
     Write-Host 'Starting the first real headless Chrome to read the actual unpacked Extension ID...'
-    $discoveryChrome = Start-Process -FilePath $ChromeExe -ArgumentList ($commonChromeArgs + '--remote-debugging-port=9222') -PassThru
+    $discoveryArgs = $commonChromeArgs + @('--remote-debugging-port=9222', 'about:blank')
+    $discoveryChrome = Start-Process -FilePath $ChromeExe -ArgumentList $discoveryArgs -PassThru
 
     $env:CHROME_DEBUG_PORT = '9222'
     $env:SUPERPOWER_EXTENSION_PATH = $ExtensionDir
@@ -117,8 +119,10 @@ try {
     Start-Sleep -Seconds 1
     if ($guiProcess.HasExited) { throw "Qt GUI exited before integration testing with code $($guiProcess.ExitCode)." }
 
-    Write-Host 'Starting the second real headless Chrome for Native Messaging verification...'
-    $verificationChrome = Start-Process -FilePath $ChromeExe -ArgumentList ($commonChromeArgs + '--remote-debugging-port=9223') -PassThru
+    $extensionPage = "chrome-extension://$extensionId/native-integration.html"
+    Write-Host "Starting the second real headless Chrome on the extension sender page: $extensionPage"
+    $verificationArgs = $commonChromeArgs + @('--remote-debugging-port=9223', $extensionPage)
+    $verificationChrome = Start-Process -FilePath $ChromeExe -ArgumentList $verificationArgs -PassThru
 
     $env:CHROME_DEBUG_PORT = '9223'
     $env:SUPERPOWER_EXTENSION_ID = $extensionId
@@ -129,7 +133,7 @@ try {
     if ($verificationChrome.HasExited) { throw "Chrome exited during the integration probe with code $($verificationChrome.ExitCode)." }
     if ($guiProcess.HasExited) { throw 'Qt GUI exited during the Native Messaging integration probe.' }
 
-    Write-Host 'PASS: real Windows Chrome → Superpower extension → Native Messaging → C++ host → SQLite/file search → Qt GUI IPC.' -ForegroundColor Green
+    Write-Host 'PASS: real Windows Chrome extension page → background bridge → Native Messaging → C++ host → SQLite/file search → Qt GUI IPC.' -ForegroundColor Green
 } finally {
     Stop-ProcessTree $verificationChrome
     Stop-ProcessTree $discoveryChrome
@@ -138,4 +142,5 @@ try {
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $registryPath
     Remove-Item -Force -ErrorAction SilentlyContinue $manifestPath
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $profileDir, $testRoot
+    Remove-Item -Force -ErrorAction SilentlyContinue $testPage
 }
