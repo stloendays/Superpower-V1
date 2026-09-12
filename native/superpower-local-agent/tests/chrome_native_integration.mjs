@@ -14,7 +14,6 @@ if (!Number.isInteger(port) || port <= 0) throw new Error('CHROME_DEBUG_PORT is 
 if (!extensionPath) throw new Error('SUPERPOWER_EXTENSION_PATH is required.');
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-const normalizePath = value => path.resolve(value).replaceAll('\\', '/').toLowerCase();
 
 async function listTargets() {
   const response = await fetch(`http://127.0.0.1:${port}/json/list`);
@@ -61,8 +60,7 @@ async function extensionWorkerTarget(expectedId = '') {
   );
 }
 
-async function extensionPageTarget() {
-  const expectedUrl = `chrome-extension://${extensionId}/native-integration.html`;
+async function extensionPageTarget(expectedUrl) {
   const deadline = Date.now() + 30_000;
   let lastError = '';
   let pageTargets = [];
@@ -157,6 +155,23 @@ async function evaluate(client, expression) {
   return result.result?.value;
 }
 
+async function readPageResult(client) {
+  const deadline = Date.now() + 30_000;
+  let raw = '';
+  while (Date.now() < deadline) {
+    raw = await evaluate(client, 'document.documentElement.dataset.superpowerResult || ""');
+    if (raw) {
+      try {
+        return JSON.parse(raw);
+      } catch {
+        throw new Error(`Integration page returned malformed result JSON: ${raw}`);
+      }
+    }
+    await sleep(200);
+  }
+  throw new Error('Integration page did not publish a result within 30 seconds.');
+}
+
 async function verifyIntegration() {
   if (!/^[a-p]{32}$/.test(extensionId)) throw new Error('SUPERPOWER_EXTENSION_ID is invalid.');
   if (!testRoot) throw new Error('SUPERPOWER_TEST_ROOT is required.');
@@ -165,92 +180,40 @@ async function verifyIntegration() {
   const proofFile = path.join(testRoot, 'native-message-proof.txt');
   fs.writeFileSync(proofFile, 'Superpower real Native Messaging integration proof.\n', 'utf8');
 
-  const worker = await extensionWorkerTarget(extensionId);
-  console.log(`Using extension service worker target: ${worker.url}`);
-  const target = await extensionPageTarget();
-  console.log(`Using extension sender page target: ${target.url}`);
-  const client = new CdpClient(target.webSocketDebuggerUrl);
-  await client.connect();
+  const workerTarget = await extensionWorkerTarget(extensionId);
+  console.log(`Using extension service worker target: ${workerTarget.url}`);
+  const workerClient = new CdpClient(workerTarget.webSocketDebuggerUrl);
+  await workerClient.connect();
 
-  let alias = '';
+  const pageUrl = `chrome-extension://${extensionId}/native-integration.html?${new URLSearchParams({
+    testRoot,
+    proofFile,
+    extensionId,
+  }).toString()}`;
+
   try {
-    await client.command('Runtime.enable');
-    const runtimeId = await evaluate(client, 'chrome?.runtime?.id');
-    assert(runtimeId === extensionId, `Extension page runtime ID mismatch: expected ${extensionId}, received ${runtimeId}`);
-
-    const send = payload =>
-      evaluate(client, `chrome.runtime.sendMessage(${JSON.stringify({ type: 'local-agent:request', payload })})`);
-
-    const ping = await send({ id: 'ci-ping', action: 'ping', args: {} });
-    assert(ping?.success === true, `Bridge ping failed: ${JSON.stringify(ping)}`);
-    assert(ping?.payload?.ok === true, `Native host ping failed: ${JSON.stringify(ping)}`);
-    assert(
-      ping?.payload?.result?.service === 'superpower-local-agent',
-      `Unexpected native host identity: ${JSON.stringify(ping)}`,
-    );
-
-    const blocked = await send({
-      id: 'ci-unapproved-memory',
-      action: 'memory.remember',
-      args: { alias: 'ci-unapproved', path: testRoot },
-    });
-    assert(blocked?.success === false, 'Browser bridge accepted an unapproved local-memory scope change.');
-    assert(/approval/i.test(blocked?.error || ''), `Approval rejection was not explicit: ${JSON.stringify(blocked)}`);
-
-    alias = `ci-native-${Date.now()}`;
-    const remembered = await send({
-      id: 'ci-remember',
-      action: 'memory.remember',
-      args: { alias, path: testRoot, approved: true },
-    });
-    assert(remembered?.success === true && remembered?.payload?.ok === true, `Remember failed: ${JSON.stringify(remembered)}`);
-
-    const resolved = await send({
-      id: 'ci-resolve',
-      action: 'memory.resolve',
-      args: { query: alias },
-    });
-    assert(resolved?.success === true && resolved?.payload?.ok === true, `Resolve failed: ${JSON.stringify(resolved)}`);
-    assert(
-      normalizePath(resolved?.payload?.result?.path || '') === normalizePath(testRoot),
-      `Resolved path mismatch: ${JSON.stringify(resolved)}`,
-    );
-
-    const searched = await send({
-      id: 'ci-search',
-      action: 'file.search',
-      args: { query: 'native-message-proof.txt', max_results: 10, max_scanned_entries: 1000 },
-    });
-    assert(searched?.success === true && searched?.payload?.ok === true, `File search failed: ${JSON.stringify(searched)}`);
-    const matches = searched?.payload?.result?.matches || [];
-    assert(
-      matches.some(match => normalizePath(match.path) === normalizePath(proofFile)),
-      `The remembered root did not yield the proof file: ${JSON.stringify(searched)}`,
-    );
-
-    const notified = await send({
-      id: 'ci-gui-notify',
-      action: 'gui.notify',
-      args: {
-        role: 'Assistant',
-        source: 'Chrome CI',
-        kind: 'success',
-        text: 'Superpower real Chrome → Native Messaging → C++ → Qt GUI integration passed.',
-      },
-    });
-    assert(notified?.success === true && notified?.payload?.ok === true, `GUI notification failed: ${JSON.stringify(notified)}`);
-    assert(
-      notified?.payload?.result?.delivered === true,
-      `Native host could not deliver the message to the running Qt GUI: ${JSON.stringify(notified)}`,
-    );
-
-    const forgotten = await send({ id: 'ci-forget', action: 'memory.forget', args: { alias } });
-    assert(forgotten?.success === true && forgotten?.payload?.ok === true, `Cleanup forget failed: ${JSON.stringify(forgotten)}`);
-    alias = '';
-
-    console.log('PASS: Chrome extension page → background bridge → Native Messaging → C++ host → SQLite/file search → Qt GUI IPC.');
+    await workerClient.command('Runtime.enable');
+    const runtimeId = await evaluate(workerClient, 'chrome.runtime.id');
+    assert(runtimeId === extensionId, `Service worker runtime ID mismatch: expected ${extensionId}, received ${runtimeId}`);
+    await evaluate(workerClient, `chrome.tabs.create({ url: ${JSON.stringify(pageUrl)} })`);
   } finally {
-    client.close();
+    workerClient.close();
+  }
+
+  const pageTarget = await extensionPageTarget(pageUrl);
+  console.log(`Using extension-owned sender page target: ${pageTarget.url}`);
+  const pageClient = new CdpClient(pageTarget.webSocketDebuggerUrl);
+  await pageClient.connect();
+
+  try {
+    await pageClient.command('Runtime.enable');
+    const result = await readPageResult(pageClient);
+    assert(result?.ok === true, `Extension integration page failed: ${JSON.stringify(result)}`);
+    assert(result?.runtimeId === extensionId, `Extension page reported wrong runtime ID: ${JSON.stringify(result)}`);
+    assert(result?.guiDelivered === true, `Qt GUI delivery was not confirmed: ${JSON.stringify(result)}`);
+    console.log(`PASS: ${result.summary}`);
+  } finally {
+    pageClient.close();
   }
 }
 
