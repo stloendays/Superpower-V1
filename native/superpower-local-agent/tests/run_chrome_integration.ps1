@@ -68,41 +68,24 @@ Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $profileDir, $testRoot
 New-Item -ItemType Directory -Force -Path $profileDir, $testRoot | Out-Null
 Set-Content -LiteralPath $testPage -Encoding utf8 -Value '<!doctype html><meta charset="utf-8"><title>Superpower Native Integration</title><p>Superpower Native Messaging integration probe.</p>'
 
-$discoveryChrome = $null
-$verificationChrome = $null
+$chromeProcess = $null
 $guiProcess = $null
 
 try {
-    $commonArgs = @(
-        "--user-data-dir=$profileDir",
-        "--disable-extensions-except=$ExtensionDir",
-        "--load-extension=$ExtensionDir",
-        '--no-first-run',
-        '--no-default-browser-check',
-        '--disable-background-networking',
-        '--disable-component-update',
-        '--disable-sync',
-        '--disable-gpu'
-    )
-
-    Write-Host 'Starting Chrome to discover the real unpacked extension ID...'
-    $discoveryArgs = $commonArgs + @('--remote-debugging-port=9222', 'about:blank')
-    $discoveryChrome = Start-Process -FilePath $ChromeExe -ArgumentList $discoveryArgs -PassThru
-
-    $env:CHROME_DEBUG_PORT = '9222'
-    $env:SUPERPOWER_PROFILE_DIR = $profileDir
     $env:SUPERPOWER_EXTENSION_PATH = $ExtensionDir
-    Start-Sleep -Milliseconds 800
+    Write-Host 'Injecting a test-only manifest key and deriving the exact Chrome extension ID...'
+    $prepareOutput = & node $NodeProbe prepare
+    if ($LASTEXITCODE -ne 0) { throw 'Extension preparation failed.' }
+    $extensionId = ($prepareOutput | Select-Object -Last 1).Trim()
+    if ($extensionId -notmatch '^[a-p]{32}$') { throw "Invalid prepared extension ID: $extensionId" }
+    Write-Host "Prepared Superpower extension ID: $extensionId"
 
-    $discoveryOutput = & node $NodeProbe discover
-    if ($LASTEXITCODE -ne 0) { throw 'Extension ID discovery probe failed.' }
-    $extensionId = ($discoveryOutput | Select-Object -Last 1).Trim()
-    if ($extensionId -notmatch '^[a-p]{32}$') { throw "Invalid discovered extension ID: $extensionId" }
-    Write-Host "Discovered Superpower extension ID: $extensionId"
-
-    Stop-ProcessTree $discoveryChrome
-    $discoveryChrome = $null
-    Start-Sleep -Milliseconds 500
+    $backgroundPath = Join-Path $ExtensionDir 'background.js'
+    $backgroundSize = (Get-Item -LiteralPath $backgroundPath).Length
+    if ($backgroundSize -lt 1024) {
+        throw "background.js is unexpectedly small ($backgroundSize bytes). Refusing to run a false-positive integration test."
+    }
+    Write-Host "Background service worker size: $backgroundSize bytes"
 
     Write-Host 'Registering the real Native Messaging host manifest...'
     & $Installer -ExtensionId $extensionId -HostExe $HostExe
@@ -112,24 +95,40 @@ try {
     Start-Sleep -Seconds 1
     if ($guiProcess.HasExited) { throw "Qt GUI exited before integration testing with code $($guiProcess.ExitCode)." }
 
-    Write-Host 'Restarting Chrome with the registered Native Messaging host...'
     $extensionPage = "chrome-extension://$extensionId/native-integration.html"
-    $verificationArgs = $commonArgs + @('--remote-debugging-port=9223', $extensionPage)
-    $verificationChrome = Start-Process -FilePath $ChromeExe -ArgumentList $verificationArgs -PassThru
+    $chromeArgs = @(
+        '--headless=new',
+        "--user-data-dir=$profileDir",
+        "--disable-extensions-except=$ExtensionDir",
+        "--load-extension=$ExtensionDir",
+        '--remote-debugging-address=127.0.0.1',
+        '--remote-debugging-port=9223',
+        '--remote-allow-origins=*',
+        '--no-first-run',
+        '--no-default-browser-check',
+        '--disable-background-networking',
+        '--disable-component-update',
+        '--disable-sync',
+        '--disable-gpu',
+        $extensionPage
+    )
+
+    Write-Host 'Starting real headless Chrome with the built Superpower extension...'
+    $chromeProcess = Start-Process -FilePath $ChromeExe -ArgumentList $chromeArgs -PassThru
 
     $env:CHROME_DEBUG_PORT = '9223'
     $env:SUPERPOWER_EXTENSION_ID = $extensionId
     $env:SUPERPOWER_TEST_ROOT = $testRoot
-    Start-Sleep -Milliseconds 800
+    Start-Sleep -Milliseconds 700
 
     & node $NodeProbe verify
     if ($LASTEXITCODE -ne 0) { throw 'Real Chrome Native Messaging integration probe failed.' }
+    if ($chromeProcess.HasExited) { throw "Chrome exited during the integration probe with code $($chromeProcess.ExitCode)." }
     if ($guiProcess.HasExited) { throw 'Qt GUI exited during the Native Messaging integration probe.' }
 
-    Write-Host 'PASS: real Windows Chrome → Superpower extension → Native Messaging → C++ host → Qt GUI integration.' -ForegroundColor Green
+    Write-Host 'PASS: real Windows Chrome → Superpower extension → Native Messaging → C++ host → SQLite/file search → Qt GUI IPC.' -ForegroundColor Green
 } finally {
-    Stop-ProcessTree $verificationChrome
-    Stop-ProcessTree $discoveryChrome
+    Stop-ProcessTree $chromeProcess
     Stop-ProcessTree $guiProcess
 
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $registryPath
