@@ -66,18 +66,11 @@ $registryPath = "HKCU:\Software\Google\Chrome\NativeMessagingHosts\$hostName"
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $profileDir, $testRoot
 New-Item -ItemType Directory -Force -Path $profileDir, $testRoot | Out-Null
 
-$chromeProcess = $null
+$discoveryChrome = $null
+$verificationChrome = $null
 $guiProcess = $null
 
 try {
-    $env:SUPERPOWER_EXTENSION_PATH = $ExtensionDir
-    Write-Host 'Injecting a test-only manifest key and deriving the exact Chrome extension ID...'
-    $prepareOutput = & node $NodeProbe prepare
-    if ($LASTEXITCODE -ne 0) { throw 'Extension preparation failed.' }
-    $extensionId = ($prepareOutput | Select-Object -Last 1).Trim()
-    if ($extensionId -notmatch '^[a-p]{32}$') { throw "Invalid prepared extension ID: $extensionId" }
-    Write-Host "Prepared Superpower extension ID: $extensionId"
-
     $backgroundPath = Join-Path $ExtensionDir 'background.js'
     $backgroundSize = (Get-Item -LiteralPath $backgroundPath).Length
     if ($backgroundSize -lt 1024) {
@@ -85,21 +78,12 @@ try {
     }
     Write-Host "Background service worker size: $backgroundSize bytes"
 
-    Write-Host 'Registering the real Native Messaging host manifest...'
-    & $Installer -ExtensionId $extensionId -HostExe $HostExe
-
-    Write-Host 'Starting the real Qt desktop GUI...'
-    $guiProcess = Start-Process -FilePath $GuiExe -PassThru
-    Start-Sleep -Seconds 1
-    if ($guiProcess.HasExited) { throw "Qt GUI exited before integration testing with code $($guiProcess.ExitCode)." }
-
-    $chromeArgs = @(
+    $commonChromeArgs = @(
         '--headless=new',
         "--user-data-dir=$profileDir",
         "--disable-extensions-except=$ExtensionDir",
         "--load-extension=$ExtensionDir",
         '--remote-debugging-address=127.0.0.1',
-        '--remote-debugging-port=9223',
         '--remote-allow-origins=*',
         '--no-first-run',
         '--no-default-browser-check',
@@ -110,22 +94,45 @@ try {
         'about:blank'
     )
 
-    Write-Host 'Starting real headless Chrome with the built Superpower extension...'
-    $chromeProcess = Start-Process -FilePath $ChromeExe -ArgumentList $chromeArgs -PassThru
+    Write-Host 'Starting the first real headless Chrome to read the actual unpacked Extension ID...'
+    $discoveryChrome = Start-Process -FilePath $ChromeExe -ArgumentList ($commonChromeArgs + '--remote-debugging-port=9222') -PassThru
+
+    $env:CHROME_DEBUG_PORT = '9222'
+    $env:SUPERPOWER_EXTENSION_PATH = $ExtensionDir
+    $discoverOutput = & node $NodeProbe discover
+    if ($LASTEXITCODE -ne 0) { throw 'Extension ID discovery failed.' }
+    $extensionId = ($discoverOutput | Select-Object -Last 1).Trim()
+    if ($extensionId -notmatch '^[a-p]{32}$') { throw "Invalid discovered extension ID: $extensionId" }
+    Write-Host "Chrome reported Superpower Extension ID: $extensionId"
+
+    Stop-ProcessTree $discoveryChrome
+    $discoveryChrome = $null
+    Start-Sleep -Milliseconds 700
+
+    Write-Host 'Registering the real Native Messaging host manifest for that exact Extension ID...'
+    & $Installer -ExtensionId $extensionId -HostExe $HostExe
+
+    Write-Host 'Starting the real Qt desktop GUI...'
+    $guiProcess = Start-Process -FilePath $GuiExe -PassThru
+    Start-Sleep -Seconds 1
+    if ($guiProcess.HasExited) { throw "Qt GUI exited before integration testing with code $($guiProcess.ExitCode)." }
+
+    Write-Host 'Starting the second real headless Chrome for Native Messaging verification...'
+    $verificationChrome = Start-Process -FilePath $ChromeExe -ArgumentList ($commonChromeArgs + '--remote-debugging-port=9223') -PassThru
 
     $env:CHROME_DEBUG_PORT = '9223'
     $env:SUPERPOWER_EXTENSION_ID = $extensionId
     $env:SUPERPOWER_TEST_ROOT = $testRoot
-    Start-Sleep -Milliseconds 700
 
     & node $NodeProbe verify
     if ($LASTEXITCODE -ne 0) { throw 'Real Chrome Native Messaging integration probe failed.' }
-    if ($chromeProcess.HasExited) { throw "Chrome exited during the integration probe with code $($chromeProcess.ExitCode)." }
+    if ($verificationChrome.HasExited) { throw "Chrome exited during the integration probe with code $($verificationChrome.ExitCode)." }
     if ($guiProcess.HasExited) { throw 'Qt GUI exited during the Native Messaging integration probe.' }
 
     Write-Host 'PASS: real Windows Chrome → Superpower extension → Native Messaging → C++ host → SQLite/file search → Qt GUI IPC.' -ForegroundColor Green
 } finally {
-    Stop-ProcessTree $chromeProcess
+    Stop-ProcessTree $verificationChrome
+    Stop-ProcessTree $discoveryChrome
     Stop-ProcessTree $guiProcess
 
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $registryPath
