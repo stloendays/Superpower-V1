@@ -1,4 +1,3 @@
-import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -8,56 +7,65 @@ const extensionPath = process.env.SUPERPOWER_EXTENSION_PATH || '';
 const extensionId = process.env.SUPERPOWER_EXTENSION_ID || '';
 const testRoot = process.env.SUPERPOWER_TEST_ROOT || '';
 
-if (!['prepare', 'verify'].includes(mode)) {
-  throw new Error('Usage: node chrome_native_integration.mjs <prepare|verify>');
+if (!['discover', 'verify'].includes(mode)) {
+  throw new Error('Usage: node chrome_native_integration.mjs <discover|verify>');
 }
+if (!Number.isInteger(port) || port <= 0) throw new Error('CHROME_DEBUG_PORT is required.');
 if (!extensionPath) throw new Error('SUPERPOWER_EXTENSION_PATH is required.');
-if (mode === 'verify' && (!Number.isInteger(port) || port <= 0)) {
-  throw new Error('CHROME_DEBUG_PORT is required for verify mode.');
-}
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const normalizePath = value => path.resolve(value).replaceAll('\\', '/').toLowerCase();
-
-function extensionIdFromPublicKey(publicKeyDer) {
-  const digest = crypto.createHash('sha256').update(publicKeyDer).digest().subarray(0, 16);
-  let id = '';
-  for (const byte of digest) {
-    id += String.fromCharCode(97 + (byte >> 4));
-    id += String.fromCharCode(97 + (byte & 0x0f));
-  }
-  return id;
-}
-
-function prepareExtension() {
-  const manifestPath = path.join(extensionPath, 'manifest.json');
-  const backgroundPath = path.join(extensionPath, 'background.js');
-  if (!fs.existsSync(manifestPath)) throw new Error(`Built extension manifest not found: ${manifestPath}`);
-  if (!fs.existsSync(backgroundPath)) throw new Error(`Built background service worker not found: ${backgroundPath}`);
-
-  const backgroundSize = fs.statSync(backgroundPath).size;
-  if (backgroundSize < 1024) {
-    throw new Error(`background.js is unexpectedly small (${backgroundSize} bytes); the service worker was likely tree-shaken.`);
-  }
-
-  const { publicKey } = crypto.generateKeyPairSync('rsa', {
-    modulusLength: 2048,
-    publicKeyEncoding: { type: 'spki', format: 'der' },
-    privateKeyEncoding: { type: 'pkcs8', format: 'der' },
-  });
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-  manifest.key = publicKey.toString('base64');
-  fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
-
-  const id = extensionIdFromPublicKey(publicKey);
-  if (!/^[a-p]{32}$/.test(id)) throw new Error(`Generated invalid Chrome extension ID: ${id}`);
-  process.stdout.write(`${id}\n`);
-}
 
 async function listTargets() {
   const response = await fetch(`http://127.0.0.1:${port}/json/list`);
   if (!response.ok) throw new Error(`Chrome DevTools target query failed: HTTP ${response.status}`);
   return response.json();
+}
+
+function extensionIdFromTarget(target) {
+  const match = String(target?.url || '').match(/^chrome-extension:\/\/([a-p]{32})\//);
+  return match?.[1] || '';
+}
+
+async function extensionWorkerTarget(expectedId = '') {
+  const expectedOrigin = expectedId ? `chrome-extension://${expectedId}/` : '';
+  const deadline = Date.now() + 30_000;
+  let lastError = '';
+  let extensionTargets = [];
+
+  while (Date.now() < deadline) {
+    try {
+      const targets = await listTargets();
+      extensionTargets = targets.filter(
+        item => item.type === 'service_worker' && String(item.url || '').startsWith('chrome-extension://'),
+      );
+
+      const target = extensionTargets.find(item => {
+        if (!item.webSocketDebuggerUrl) return false;
+        const url = String(item.url || '');
+        if (expectedOrigin) return url.startsWith(expectedOrigin);
+        return url.endsWith('/background.js') || url.includes('/background.js?');
+      });
+      if (target) return target;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+    await sleep(300);
+  }
+
+  const targetSummary = extensionTargets.map(item => `${item.type}:${item.url}`).join(', ');
+  throw new Error(
+    `Chrome never exposed Superpower's MV3 service worker${expectedId ? ` for ${expectedId}` : ''}.` +
+      `${targetSummary ? ` Extension targets: ${targetSummary}.` : ''}` +
+      `${lastError ? ` Last error: ${lastError}` : ''}`,
+  );
+}
+
+async function discoverExtensionId() {
+  const target = await extensionWorkerTarget();
+  const id = extensionIdFromTarget(target);
+  if (!/^[a-p]{32}$/.test(id)) throw new Error(`Could not read a valid extension ID from ${target.url}`);
+  process.stdout.write(`${id}\n`);
 }
 
 class CdpClient {
@@ -106,36 +114,6 @@ class CdpClient {
   }
 }
 
-async function extensionWorkerTarget() {
-  const expectedOrigin = `chrome-extension://${extensionId}/`;
-  const deadline = Date.now() + 30_000;
-  let lastError = '';
-  let extensionTargets = [];
-  while (Date.now() < deadline) {
-    try {
-      const targets = await listTargets();
-      extensionTargets = targets.filter(item => String(item.url || '').startsWith('chrome-extension://'));
-      const target = extensionTargets.find(
-        item =>
-          item.type === 'service_worker' &&
-          String(item.url || '').startsWith(expectedOrigin) &&
-          item.webSocketDebuggerUrl,
-      );
-      if (target) return target;
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
-    }
-    await sleep(300);
-  }
-
-  const targetSummary = extensionTargets.map(item => `${item.type}:${item.url}`).join(', ');
-  throw new Error(
-    `Chrome never exposed Superpower's MV3 service worker for ${extensionId}.` +
-      `${targetSummary ? ` Extension targets: ${targetSummary}.` : ''}` +
-      `${lastError ? ` Last error: ${lastError}` : ''}`,
-  );
-}
-
 function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
@@ -161,7 +139,7 @@ async function verifyIntegration() {
   const proofFile = path.join(testRoot, 'native-message-proof.txt');
   fs.writeFileSync(proofFile, 'Superpower real Native Messaging integration proof.\n', 'utf8');
 
-  const target = await extensionWorkerTarget();
+  const target = await extensionWorkerTarget(extensionId);
   console.log(`Using extension service worker target: ${target.url}`);
   const client = new CdpClient(target.webSocketDebuggerUrl);
   await client.connect();
@@ -248,8 +226,8 @@ async function verifyIntegration() {
   }
 }
 
-if (mode === 'prepare') {
-  prepareExtension();
+if (mode === 'discover') {
+  await discoverExtensionId();
 } else {
   await verifyIntegration();
 }
